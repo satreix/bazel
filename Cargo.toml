@@ -1,0 +1,12 @@
+[package]
+name = "bazel"
+version = "0.1.0"
+authors = ["The Bazel Authors"]
+edition = "2018"
+
+[[bin]]
+name = "bazel"
+path = "src/main/rust/main.rs"
+
+[dependencies]
+dirs = "3.0.1"

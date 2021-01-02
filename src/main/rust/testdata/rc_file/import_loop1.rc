@@ -1,0 +1,1 @@
+import src/main/rust/testdata/rc_file/import_loop2.rc

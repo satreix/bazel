@@ -1,0 +1,9 @@
+# Use a persistent disk cache.
+build --disk_cache=~/.cache/bazel/
+
+# Use a cross-workspace shared repository download cache.
+build --repository_cache=~/.cache/bazel-repositories/
+
+test --test_output errors
+test --test_summary terse
+test --test_verbose_timeout_warnings

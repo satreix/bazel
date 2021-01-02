@@ -1,0 +1,4 @@
+# Some comment that \
+spans multiple lines.
+test --test_output \
+errors
