@@ -1,12 +1,14 @@
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 
+use slog::info;
+
 const COMMAND_IMPORT: &str = "import";
 const COMMAND_TRY_IMPORT: &str = "try-import";
 
 /// Single option in an rc file.
 #[derive(Debug, PartialEq)]
-struct RcOption {
+pub struct RcOption {
     option: String,
     /// Only keep the index of the source file to avoid copying the paths all over.
     /// This index points into the RcFile's canonical_source_paths() vector.
@@ -26,48 +28,37 @@ pub enum ParseError {
 /// https://docs.bazel.build/versions/master/guide.html#bazelrc-syntax-and-semantics.
 #[derive(Debug)]
 pub struct RcFile {
-    // // Command -> all options for that command (in order of appearance).
-    // using OptionMap = std::unordered_map<std::string, std::vector<RcOption>>;
-    // const OptionMap& options() const { return options_; }
-    //
-    // private:
-    // RcFile(std::string filename, const WorkspaceLayout* workspace_layout, std::string workspace);
-    //
-    // // Recursive call to parse a file and its imports.
-    // ParseError ParseFile(const std::string& filename,
-    // std::deque<std::string>* import_stack,
-    // std::string* error_text);
-    filename_: String,
+    logger: slog::Logger,
 
-    /// Workspace definition.
-    // const WorkspaceLayout* workspace_layout_;
-    workspace_: String,
+    filename: String,
 
     /// Full closure of rcfile paths imported from this file (including itself).
     /// These are all canonical paths, created with blaze_util::MakeCanonical.
     /// This also means all of these paths should exist.
-    canonical_rcfile_paths_: Vec<String>,
+    canonical_rcfile_paths: Vec<String>,
 
     /// All options parsed from the file.
-    options_: HashMap<String, Vec<RcOption>>,
-}
+    options: HashMap<String, Vec<RcOption>>,
 
-// RcFile::RcFile(string filename, const WorkspaceLayout* workspace_layout, string workspace)
-// : filename_(std::move(filename)),
-// workspace_layout_(workspace_layout),
-// workspace_(std::move(workspace)) {}
+    /// Workspace definition.
+    // FIXME const WorkspaceLayout* workspace_layout;
+    workspace: String,
+}
 
 impl RcFile {
     /// Constructs a parsed rc file object, or returns an error.
-    // /*static*/ std::unique_ptr<RcFile> RcFile::Parse(
-    // std::string filename, const WorkspaceLayout* workspace_layout,
-    // std::string workspace, ParseError* error, std::string* error_text) {
-    pub fn parse(filename: &str, workspace: &str) -> Result<Self, ParseError> {
-        let mut rc = RcFile {
-            filename_: filename.to_string(),
-            workspace_: workspace.to_string(),
-            canonical_rcfile_paths_: Vec::new(),
-            options_: Default::default(),
+    pub fn new(
+        logger: slog::Logger,
+        filename: &str,
+        // FIXME const WorkspaceLayout* workspace_layout
+        workspace: &str,
+    ) -> Result<Self, ParseError> {
+        let mut rc = Self {
+            logger,
+            filename: filename.to_string(),
+            canonical_rcfile_paths: Vec::new(),
+            options: Default::default(),
+            workspace: workspace.to_string(),
         };
         let mut import_stack = VecDeque::new();
         rc.parse_file(filename, &mut import_stack)?;
@@ -76,7 +67,12 @@ impl RcFile {
 
     /// Returns all relevant rc sources for this file (including itself).
     pub fn canonical_source_paths(self) -> Vec<String> {
-        self.canonical_rcfile_paths_
+        self.canonical_rcfile_paths
+    }
+
+    /// Command -> all options for that command (in order of appearance).
+    pub fn options(self) -> HashMap<String, Vec<RcOption>> {
+        self.options
     }
 
     fn parse_file(
@@ -84,8 +80,7 @@ impl RcFile {
         filename: &str,
         import_stack: &mut VecDeque<String>,
     ) -> Result<(), ParseError> {
-        // BAZEL_LOG(INFO) << "Parsing the RcFile " << filename;
-        println!("Parsing {}", filename);
+        info!(self.logger, "parsing rc file"; "filename" => filename);
 
         let contents = match std::fs::read_to_string(&filename) {
             Ok(x) => x,
@@ -109,9 +104,9 @@ impl RcFile {
             }
         };
 
-        let rcfile_index = self.canonical_rcfile_paths_.len();
+        let rcfile_index = self.canonical_rcfile_paths.len();
         if let Some(p) = canonical_filename.to_str() {
-            self.canonical_rcfile_paths_.push(String::from(p));
+            self.canonical_rcfile_paths.push(String::from(p));
         } else {
             return Err(ParseError::UnreadableFile(
                 "canonical_filename.to_str error".to_string(),
@@ -160,7 +155,7 @@ impl RcFile {
                     Ok(_) => {}
                     Err(ParseError::UnreadableFile(_)) if command == COMMAND_TRY_IMPORT => {
                         // For try-import, we ignore it if we couldn't find a file.
-                        println!("Skipped optional import of {}, the specified rc file either does not exist or is not readable.", words[1]);
+                        info!(self.logger, "Skipped optional import. The specified rc file either does not exist or is not readable."; "import" => words[1]);
                     }
                     e => {
                         // Files that are there but are malformed or introduce a loop are
@@ -172,7 +167,7 @@ impl RcFile {
 
                 import_stack.pop_back();
             } else {
-                self.options_
+                self.options
                     .entry(command.to_string())
                     .or_insert_with(Vec::new)
                     .push(RcOption {
@@ -189,24 +184,36 @@ impl RcFile {
 #[cfg(test)]
 mod test {
     use super::*;
+    use slog::{o, Drain};
+
+    fn logger() -> slog::Logger {
+        let decorator = slog_term::PlainSyncDecorator::new(slog_term::TestStdoutWriter);
+        let drain = slog_term::FullFormat::new(decorator)
+            .build()
+            .filter_level(slog::Level::Debug)
+            .fuse();
+        slog::Logger::root(drain, o!())
+    }
 
     #[test]
     fn parse_line_split_rc_file() {
         let mut expected = HashMap::new();
         expected.insert(
             "test".to_string(),
-            vec![
-                RcOption {
-                    option: "--test_output errors".to_string(),
-                    source_index: 0,
-                },
-            ],
+            vec![RcOption {
+                option: "--test_output errors".to_string(),
+                source_index: 0,
+            }],
         );
 
-        let got = RcFile::parse("src/main/rust/testdata/rc_file/line_split.rc", "dummy-workspace");
+        let got = RcFile::new(
+            logger(),
+            "src/main/rust/testdata/rc_file/line_split.rc",
+            "dummy-workspace",
+        );
         assert!(got.is_ok());
         if let Ok(rc) = got {
-            assert_eq!(rc.options_, expected);
+            assert_eq!(rc.options(), expected);
         }
     }
 
@@ -244,16 +251,21 @@ mod test {
             ],
         );
 
-        let got = RcFile::parse("src/main/rust/testdata/rc_file/user.rc", "dummy-workspace");
+        let got = RcFile::new(
+            logger(),
+            "src/main/rust/testdata/rc_file/user.rc",
+            "dummy-workspace",
+        );
         assert!(got.is_ok());
         if let Ok(rc) = got {
-            assert_eq!(rc.options_, expected);
+            assert_eq!(rc.options(), expected);
         }
     }
 
     #[test]
     fn parse_tensorflow_rc_file() {
-        assert!(RcFile::parse(
+        assert!(RcFile::new(
+            logger(),
             "src/main/rust/testdata/rc_file/tensorflow.rc",
             "dummy-workspace",
         )
@@ -262,7 +274,8 @@ mod test {
 
     #[test]
     fn parse_import_loop_self_rc_file() {
-        match RcFile::parse(
+        match RcFile::new(
+            logger(),
             "src/main/rust/testdata/rc_file/import_loop_self.rc",
             "dummy-workspace",
         ) {
@@ -277,7 +290,8 @@ mod test {
 
     #[test]
     fn parse_import_loop1_rc_file() {
-        match RcFile::parse(
+        match RcFile::new(
+            logger(),
             "src/main/rust/testdata/rc_file/import_loop1.rc",
             "dummy-workspace",
         ) {

@@ -10,3 +10,6 @@ path = "src/main/rust/main.rs"
 
 [dependencies]
 dirs = "3.0.1"
+slog = "2.7.0"
+slog-async = "2.5.0"
+slog-term = "2.6.0"
