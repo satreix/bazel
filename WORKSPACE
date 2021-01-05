@@ -4,6 +4,13 @@ load("//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("//:distdir.bzl", "dist_http_archive", "distdir_tar")
 load("//:distdir_deps.bzl", "DIST_DEPS")
 
+http_archive(
+    name = "io_bazel_rules_rust",
+    urls = ["https://github.com/bazelbuild/rules_rust/archive/df18ddbece5b68f86e63414ea4b50d691923039a.tar.gz"],
+    strip_prefix = "rules_rust-df18ddbece5b68f86e63414ea4b50d691923039a",
+    sha256 = "8e1bae501e0df40e8feb2497ebab37c84930bf00b332f8f55315dfc08d85c30a",
+)
+
 # These can be used as values for the patch_cmds and patch_cmds_win attributes
 # of http_archive, in order to export the WORKSPACE file from the BUILD or
 # BUILD.bazel file. This is useful for cases like //src:test_repos, where we
@@ -726,3 +733,11 @@ debian_deps()
 load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
 
 bazel_skylib_workspace()
+
+load("@io_bazel_rules_rust//rust:repositories.bzl", "rust_repositories")
+
+rust_repositories(version = "1.49.0", edition="2018")
+
+load("//cargo:crates.bzl", "raze_fetch_remote_crates")
+
+raze_fetch_remote_crates()

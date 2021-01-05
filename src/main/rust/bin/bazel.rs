@@ -5,7 +5,7 @@ extern crate slog_term;
 
 use slog::{error, info, o, Drain};
 
-mod rc_file;
+extern crate bazel;
 
 fn logger() -> slog::Logger {
     let decorator = slog_term::TermDecorator::new().build();
@@ -20,19 +20,18 @@ fn run() -> i32 {
     let p = dirs::home_dir().unwrap().join(".bazelrc");
     let filename = p.to_str().unwrap();
 
-    match rc_file::RcFile::new(
+    let rc = match bazel::rc_file::RcFile::new(
         log.new(o!("component" => "rc_parser")),
         filename,
         "dummy-workspace",
     ) {
-        Ok(rc) => {
-            info!(log, "success"; "rc" => format!("{:#?}", rc))
-        }
+        Ok(rc) => rc,
         Err(e) => {
             error!(log, "{:#?}", e);
             return 1;
         }
-    }
+    };
+    info!(log, "success"; "rc" => format!("{:#?}", rc));
 
     0
 }
