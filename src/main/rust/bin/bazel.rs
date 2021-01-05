@@ -17,6 +17,19 @@ fn logger() -> slog::Logger {
 fn run() -> i32 {
     let log = logger();
 
+    let cwd = std::env::current_dir().unwrap();
+    let w = match bazel::workspace_layout::find_workspace(cwd.to_str().unwrap()) {
+        Ok(w) => w,
+        Err(e) => {
+            error!(log, "get_workspace"; "error" => format!("{:#?}", e));
+            return 1;
+        }
+    };
+    info!(log, "get_workspace"; "dir" => format!("{:#?}", w));
+
+    let pretty_name = bazel::workspace_layout::pretty_workspace_name(w);
+    info!(log, "pretty_workspace_name"; "name" => format!("{:#?}", pretty_name));
+
     let p = dirs::home_dir().unwrap().join(".bazelrc");
     let filename = p.to_str().unwrap();
 

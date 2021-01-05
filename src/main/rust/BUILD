@@ -5,6 +5,7 @@ rust_library(
     srcs = [
         "lib.rs",
         "rc_file.rs",
+        "workspace_layout.rs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -14,7 +15,11 @@ rust_library(
 
 rust_test(
     name = "bazel_test",
-    srcs = ["rc_file.rs"],
+    srcs = [
+        "lib.rs",
+        "rc_file.rs",
+        "workspace_layout.rs",
+    ],
     data = glob(["testdata/**"]),
     deps = [
         ":bazel",

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 
+use crate::workspace_layout::workspace_relativize_rc_file_path;
 use slog::info;
 
 const COMMAND_IMPORT: &str = "import";
@@ -131,17 +132,13 @@ impl RcFile {
             let command = words[0];
 
             if command == COMMAND_IMPORT || command == COMMAND_TRY_IMPORT {
-                // FIXME
-                // if (words.size() != 2 ||
-                // (words[1].compare(0, workspace_layout_->WorkspacePrefixLength,
-                // workspace_layout_->WorkspacePrefix) == 0 &&
-                // !workspace_layout_->WorkspaceRelativizeRcFilePath(workspace_,
-                // &words[1]))) {
                 if words.len() != 2 {
                     return Err(ParseError::InvalidFormat(format!("Invalid import declaration in '{:?}': '{}' (are you in your source checkout/WORKSPACE?)", canonical_filename.to_str(), l)));
                 }
 
-                if import_stack.contains(&words[1].to_string()) {
+                let import = workspace_relativize_rc_file_path(&self.workspace, words[1]);
+
+                if import_stack.contains(&import.to_string()) {
                     return Err(ParseError::ImportLoop(format!(
                         "Import loop detected:\n{} {}",
                         import_stack.as_slices().0.join(" "),
@@ -149,9 +146,9 @@ impl RcFile {
                     )));
                 }
 
-                import_stack.push_back(words[1].to_string());
+                import_stack.push_back(import.to_string());
 
-                match self.parse_file(words[1], import_stack) {
+                match self.parse_file(&import, import_stack) {
                     Ok(_) => {}
                     Err(ParseError::UnreadableFile(_)) if command == COMMAND_TRY_IMPORT => {
                         // For try-import, we ignore it if we couldn't find a file.
@@ -260,6 +257,16 @@ mod test {
         if let Ok(rc) = got {
             assert_eq!(rc.options(), expected);
         }
+    }
+
+    #[test]
+    fn parse_import_workspace_prefix_rc_file() {
+        assert!(RcFile::new(
+            logger(),
+            "src/main/rust/testdata/rc_file/import_workspace_prefix.rc",
+            "src/main/rust/testdata/rc_file",
+        )
+        .is_ok());
     }
 
     #[test]
