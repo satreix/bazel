@@ -16,6 +16,12 @@ pub struct RcOption {
     source_index: usize,
 }
 
+impl RcOption {
+    pub fn new(option: String, source_index: usize,) -> Self {
+       Self { option, source_index }
+    }
+}
+
 #[derive(Debug)]
 pub enum ParseError {
     UnreadableFile(String),
@@ -183,6 +189,18 @@ mod test {
     use super::*;
     use slog::{o, Drain};
 
+    macro_rules! map(
+        { $($key:expr => $value:expr),+ } => {
+            {
+                let mut m = ::std::collections::HashMap::new();
+                $(
+                    m.insert($key, $value);
+                )+
+                m
+            }
+         };
+    );
+
     fn logger() -> slog::Logger {
         let decorator = slog_term::PlainSyncDecorator::new(slog_term::TestStdoutWriter);
         let drain = slog_term::FullFormat::new(decorator)
@@ -194,19 +212,16 @@ mod test {
 
     #[test]
     fn parse_line_split_rc_file() {
-        let mut expected = HashMap::new();
-        expected.insert(
-            "test".to_string(),
-            vec![RcOption {
-                option: "--test_output errors".to_string(),
-                source_index: 0,
-            }],
-        );
+        let expected = map!{
+            "test".to_string() => vec![
+                RcOption::new("--test_output errors".to_string(), 0),
+            ]
+        };
 
         let got = RcFile::new(
             logger(),
             "src/main/rust/testdata/rc_file/line_split.rc",
-            "dummy-workspace",
+            "src/main/rust/testdata/rc_file",
         );
         assert!(got.is_ok());
         if let Ok(rc) = got {
@@ -216,42 +231,22 @@ mod test {
 
     #[test]
     fn parse_user_rc_file() {
-        let mut expected = HashMap::new();
-        expected.insert(
-            "build".to_string(),
-            vec![
-                RcOption {
-                    option: "--disk_cache=~/.cache/bazel/".to_string(),
-                    source_index: 0,
-                },
-                RcOption {
-                    option: "--repository_cache=~/.cache/bazel-repositories/".to_string(),
-                    source_index: 0,
-                },
+        let expected = map!{
+            "build".to_string() => vec![
+                RcOption::new("--disk_cache=~/.cache/bazel/".to_string(), 0),
+                RcOption::new("--repository_cache=~/.cache/bazel-repositories/".to_string(), 0),
             ],
-        );
-        expected.insert(
-            "test".to_string(),
-            vec![
-                RcOption {
-                    option: "--test_output errors".to_string(),
-                    source_index: 0,
-                },
-                RcOption {
-                    option: "--test_summary terse".to_string(),
-                    source_index: 0,
-                },
-                RcOption {
-                    option: "--test_verbose_timeout_warnings".to_string(),
-                    source_index: 0,
-                },
-            ],
-        );
+            "test".to_string() => vec![
+                RcOption::new("--test_output errors".to_string(), 0),
+                RcOption::new("--test_summary terse".to_string(), 0),
+                RcOption::new("--test_verbose_timeout_warnings".to_string(), 0),
+            ]
+        };
 
         let got = RcFile::new(
             logger(),
             "src/main/rust/testdata/rc_file/user.rc",
-            "dummy-workspace",
+            "src/main/rust/testdata/rc_file",
         );
         assert!(got.is_ok());
         if let Ok(rc) = got {
@@ -274,7 +269,7 @@ mod test {
         assert!(RcFile::new(
             logger(),
             "src/main/rust/testdata/rc_file/tensorflow.rc",
-            "dummy-workspace",
+            "src/main/rust/testdata/rc_file",
         )
         .is_ok());
     }
@@ -284,7 +279,7 @@ mod test {
         match RcFile::new(
             logger(),
             "src/main/rust/testdata/rc_file/import_loop_self.rc",
-            "dummy-workspace",
+            "src/main/rust/testdata/rc_file",
         ) {
             Err(ParseError::ImportLoop(msg)) => {
                 assert_eq!(msg, "Import loop detected:\nsrc/main/rust/testdata/rc_file/import_loop_self.rc src/main/rust/testdata/rc_file/import_loop_self.rc")
@@ -300,7 +295,7 @@ mod test {
         match RcFile::new(
             logger(),
             "src/main/rust/testdata/rc_file/import_loop1.rc",
-            "dummy-workspace",
+            "src/main/rust/testdata/rc_file",
         ) {
             Err(ParseError::ImportLoop(msg)) => {
                 assert_eq!(msg, "Import loop detected:\nsrc/main/rust/testdata/rc_file/import_loop2.rc src/main/rust/testdata/rc_file/import_loop3.rc src/main/rust/testdata/rc_file/import_loop1.rc src/main/rust/testdata/rc_file/import_loop2.rc")
