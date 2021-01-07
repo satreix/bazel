@@ -51,7 +51,7 @@ public final class ExitCode {
   public static final ExitCode ANALYSIS_FAILURE = ExitCode.create(7, "ANALYSIS_FAILURE");
   public static final ExitCode INTERRUPTED = ExitCode.create(8, "INTERRUPTED");
   public static final ExitCode LOCK_HELD_NOBLOCK_FOR_LOCK =
-      ExitCode.create(9, "LOCK_HELD_NOBLOCK_FOR_LOCK");
+      ExitCode.create(9, "LockHeldNoblockForLock");
 
   public static final ExitCode REMOTE_ENVIRONMENTAL_ERROR =
       ExitCode.createInfrastructureFailure(32, "REMOTE_ENVIRONMENTAL_ERROR");
@@ -60,7 +60,7 @@ public final class ExitCode {
   public static final ExitCode REMOTE_ERROR =
       ExitCode.createInfrastructureFailure(34, "REMOTE_ERROR");
   public static final ExitCode LOCAL_ENVIRONMENTAL_ERROR =
-      ExitCode.createInfrastructureFailure(36, "LOCAL_ENVIRONMENTAL_ERROR");
+      ExitCode.createInfrastructureFailure(36, "LocalEnvironmentalError");
   public static final ExitCode BLAZE_INTERNAL_ERROR =
       ExitCode.createInfrastructureFailure(37, "BLAZE_INTERNAL_ERROR");
   public static final ExitCode TRANSIENT_BUILD_EVENT_SERVICE_UPLOAD_ERROR =

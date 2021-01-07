@@ -47,3 +47,12 @@ alias(
         "manual",
     ],
 )
+
+alias(
+    name = "zip",
+    actual = "@raze__zip__0_5_9//:zip",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)

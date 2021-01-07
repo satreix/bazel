@@ -35,7 +35,7 @@ import javax.annotation.Nullable;
  *
  * <p>INTERRUPTION conditions arise from being unable to complete an evaluation for whatever reason.
  *
- * <p>INTERNAL_ERROR would happen because of anything which arises from within blaze itself but is
+ * <p>InternalError would happen because of anything which arises from within blaze itself but is
  * generally unexpected to ever occur for any user input.
  *
  * <p>LOST_INPUT which means the failure occurred because the action expected to consume some input

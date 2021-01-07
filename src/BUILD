@@ -375,6 +375,26 @@ genrule(
     cmd = "zip -qX $@ $$(echo $(SRCS) | xargs -n 1 | grep -v '.*/WORKSPACE$$' | sort | xargs)",
 )
 
+# Rust client wrapped
+# FIXME
+genrule(
+    name = "bazel-bin-rs",
+    srcs = [
+        "//src/main/rust/bin:bazel",
+        "package-zip_jdk_minimal",
+    ],
+    outs = ["bazel-rs"],
+    cmd = "rm -f $@; cat $(location //src/main/rust/bin:bazel) $(location :package-zip_jdk_minimal) > $@ && zip -qA $@",
+    executable = 1,
+    output_to_bindir = 1,
+    visibility = [
+        "//scripts:__pkg__",  # For bash completion generation
+        "//scripts/packages:__pkg__",  # For installer generation
+        "//src/java:__subpackages__",  # For command line reference generation
+        "//src/test:__subpackages__",  # For integration tests
+    ],
+)
+
 [genrule(
     name = "bazel-bin" + suffix,
     srcs = [

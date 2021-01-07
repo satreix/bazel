@@ -16,8 +16,10 @@ dirs = "3.0.1"
 slog = "2.7.0"
 slog-async = "2.5.0"
 slog-term = "2.6.0"
+zip = "0.5.9"
 
-[workspace.metadata.raze]
+[package.metadata.raze]
+default_gen_buildrs = true
 workspace_path = "//cargo"
 package_aliases_dir = "cargo"
 targets = [
@@ -26,3 +28,9 @@ targets = [
     "x86_64-unknown-linux-gnu",
 ]
 genmode = "Remote"
+
+[package.metadata.raze.crates.proc-macro2.'1.0.24']
+additional_flags = [
+    "--cfg=use_proc_macro",
+    "--cfg=wrap_proc_macro",
+]

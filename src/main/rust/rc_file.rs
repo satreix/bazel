@@ -17,8 +17,11 @@ pub struct RcOption {
 }
 
 impl RcOption {
-    pub fn new(option: String, source_index: usize,) -> Self {
-       Self { option, source_index }
+    pub fn new(option: String, source_index: usize) -> Self {
+        Self {
+            option,
+            source_index,
+        }
     }
 }
 
@@ -212,7 +215,7 @@ mod test {
 
     #[test]
     fn parse_line_split_rc_file() {
-        let expected = map!{
+        let expected = map! {
             "test".to_string() => vec![
                 RcOption::new("--test_output errors".to_string(), 0),
             ]
@@ -231,7 +234,7 @@ mod test {
 
     #[test]
     fn parse_user_rc_file() {
-        let expected = map!{
+        let expected = map! {
             "build".to_string() => vec![
                 RcOption::new("--disk_cache=~/.cache/bazel/".to_string(), 0),
                 RcOption::new("--repository_cache=~/.cache/bazel-repositories/".to_string(), 0),
