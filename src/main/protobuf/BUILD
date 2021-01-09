@@ -5,6 +5,7 @@ load("@rules_proto//proto:defs.bzl", "proto_library")
 load("//third_party/grpc:build_defs.bzl", "java_grpc_library")
 load("//third_party/grpc/bazel:cc_grpc_library.bzl", "cc_grpc_library")
 load("//tools/build_rules:utilities.bzl", "java_library_srcs")
+load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -105,6 +106,11 @@ proto_library(
 
 java_proto_library(
     name = "command_server_java_proto",
+    deps = [":command_server_proto"],
+)
+
+rust_grpc_library(
+    name = "command_server_rust_proto",
     deps = [":command_server_proto"],
 )
 
