@@ -179,10 +179,9 @@ pub fn extract_build_label(archive_path: &str) -> String {
     let mut archive = zip::ZipArchive::new(zipfile).unwrap();
 
     let filename = "build-label.txt";
-    let mut file = match archive.by_name(filename) {
-        Ok(file) => file,
-        Err(..) => { panic!("File {} not found", filename); }
-    };
+    let mut file = archive
+        .by_name(filename)
+        .unwrap_or_else(|_| panic!("File {} not found", filename));
 
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
