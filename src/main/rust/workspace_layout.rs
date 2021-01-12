@@ -25,9 +25,7 @@ pub fn find_workspace(cwd: &str) -> Result<&str, &str> {
             return Ok(workspace.to_str().unwrap());
         }
 
-        workspace = workspace
-            .parent()
-            .ok_or("could not find workspace")?;
+        workspace = workspace.parent().ok_or("could not find workspace")?;
 
         if workspace.to_str().unwrap() == "" {
             break;

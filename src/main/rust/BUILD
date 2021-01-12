@@ -1,16 +1,15 @@
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library", "rust_test")
-
-_srcs = [
-    "archive_utils.rs",
-    "exit_code.rs",
-    "lib.rs",
-    "rc_file.rs",
-    "workspace_layout.rs",
-]
+load("@io_bazel_rules_rust//proto:toolchain.bzl", "GRPC_COMPILE_DEPS")
+load("@io_bazel_rules_rust//rust:rust.bzl", "rust_clippy", "rust_library", "rust_test")
 
 rust_library(
     name = "bazel",
-    srcs = _srcs,
+    srcs = [
+        "archive_utils.rs",
+        "exit_code.rs",
+        "lib.rs",
+        "rc_file.rs",
+        "workspace_layout.rs",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//cargo:dirs",
@@ -18,16 +17,18 @@ rust_library(
         "//cargo:slog_async",
         "//cargo:slog_term",
         "//cargo:zip",
-    ],
+        "//src/main/protobuf:command_server_rust_proto",
+    ] + GRPC_COMPILE_DEPS,
 )
 
 rust_test(
     name = "bazel_test",
-    srcs = _srcs,
+    crate = ":bazel",
     data = glob(["testdata/**"]),
-    deps = [
-        ":bazel",
-        "//cargo:slog",
-        "//cargo:slog_term",
-    ],
+)
+
+rust_clippy(
+    name = "bazel_clippy_test",
+    testonly = True,
+    deps = [":bazel"],
 )

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Bootstrap and client code for Bazel server.
 //!
 //! Responsible for:
@@ -84,19 +86,22 @@
 //!   connections. It would also not be resilient against a dead server that
 //!   left a PID file around.
 
+use std::path::Path;
+
 extern crate dirs;
+extern crate protobuf;
 extern crate slog;
+use slog::{error, info, o, Drain};
 extern crate slog_async;
 extern crate slog_term;
 extern crate zip;
-
-use slog::{error, info, o, Drain};
-use std::path::Path;
 
 mod archive_utils;
 mod exit_code;
 mod rc_file;
 mod workspace_layout;
+
+extern crate command_server_rust_proto;
 
 // #include <string>
 //
@@ -2192,6 +2197,19 @@ pub fn main(
     info!(log, "success"; "rc" => format!("{:#?}", rc));
 
     // FIXME end fake
+
+    // FIXME GRPC Stub demo
+
+    let mut run_req = command_server_rust_proto::RunRequest::new();
+    run_req.set_cookie("this-is-the-cookie-value".to_string());
+    run_req.set_client_description("bazel-rs".to_string());
+    run_req.set_arg(protobuf::RepeatedField::from(vec![
+        Vec::<u8>::from("build"),
+        Vec::<u8>::from("//src:bazel-rs"),
+    ]));
+    info!(log, "grpc stub demo"; "run_req" => format!("{:?}", run_req));
+
+    // FIXME end GRPC Stub demo
 
     exit_code::ExitCode::Success
 }

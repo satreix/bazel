@@ -97,14 +97,13 @@ impl RcFile {
             ParseError::UnreadableFile(format!("error reading file '{}': {:?}", filename, e))
         })?;
 
-        let canonical_filename = fs::canonicalize(filename).map_err(|e|
-            ParseError::UnreadableFile(format!("canonicalize error: {:?}", e))
-        )?;
+        let canonical_filename = fs::canonicalize(filename)
+            .map_err(|e| ParseError::UnreadableFile(format!("canonicalize error: {:?}", e)))?;
 
         let rcfile_index = self.canonical_rcfile_paths.len();
-        let canonical_filename_str = canonical_filename
-            .to_str()
-            .ok_or_else(|| ParseError::UnreadableFile("canonical_filename.to_str error".to_string()))?;
+        let canonical_filename_str = canonical_filename.to_str().ok_or_else(|| {
+            ParseError::UnreadableFile("canonical_filename.to_str error".to_string())
+        })?;
         self.canonical_rcfile_paths
             .push(canonical_filename_str.to_string());
 
