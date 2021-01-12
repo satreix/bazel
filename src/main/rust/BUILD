@@ -5,9 +5,11 @@ rust_library(
     name = "bazel",
     srcs = [
         "archive_utils.rs",
+        "bazel_startup_options.rs",
         "exit_code.rs",
         "lib.rs",
         "rc_file.rs",
+        "startup_options.rs",
         "workspace_layout.rs",
     ],
     visibility = ["//visibility:public"],

@@ -97,8 +97,10 @@ extern crate slog_term;
 extern crate zip;
 
 mod archive_utils;
+mod bazel_startup_options;
 mod exit_code;
 mod rc_file;
+mod startup_options;
 mod workspace_layout;
 
 extern crate command_server_rust_proto;
@@ -254,7 +256,7 @@ impl LoggingInfo {
     }
 }
 
-struct BlazeServer {
+struct BazelServer {
     logger: slog::Logger,
 
     //   BlazeLock blaze_lock_;
@@ -281,9 +283,11 @@ struct BlazeServer {
     output_base: String, // FIXME use path:  const blaze_util::Path output_base_;
 }
 
-impl BlazeServer {
-    pub fn new(logger: slog::Logger) -> Self {
-        // BlazeServer::BlazeServer(const StartupOptions &startup_options)
+impl BazelServer {
+    pub fn new(
+        logger: slog::Logger,
+    ) -> Self {
+        // BazelServer::BazelServer(const StartupOptions &startup_options)
         //     : process_info_(startup_options.output_base,
         //                     startup_options.server_jvm_out),
         //       connect_timeout_secs_(startup_options.connect_timeout_secs),
@@ -333,14 +337,14 @@ impl BlazeServer {
 
     /// Acquire a lock for the server running in this output base. Returns the
     /// number of milliseconds spent waiting for the lock.
-    pub fn acquire_lock() {
-        // uint64_t BlazeServer::acquire_lock() {
+    pub fn acquire_lock(&self) -> std::time::Duration {
+        // uint64_t BazelServer::acquire_lock() {
         unimplemented!();
         // return blaze::acquire_lock(output_base_, batch_, block_for_lock_, &blaze_lock_);
     }
 
     fn try_connect(self) -> bool {
-        // bool BlazeServer::try_connect(CommandServer::Stub *client) {
+        // bool BazelServer::try_connect(CommandServer::Stub *client) {
 
         //   grpc::ClientContext context;
         //   context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(connect_timeout_secs_));
@@ -368,7 +372,7 @@ impl BlazeServer {
     /// call this when this object is in disconnected state. If it returns true,
     /// this object will be in connected state.
     fn connect() -> bool {
-        // bool BlazeServer::Connect() {
+        // bool BazelServer::Connect() {
 
         unimplemented!();
         //   assert(!Connected());
@@ -430,7 +434,7 @@ impl BlazeServer {
     /// Cancellation works as follows:
     ///
     /// When the user presses Ctrl-C, a SIGINT is delivered to the client, which is
-    /// translated into a BlazeServer::Cancel() call. Since it's not a good idea to
+    /// translated into a BazelServer::Cancel() call. Since it's not a good idea to
     /// do significant work in signal handlers, all it does is write a byte to an
     /// unnamed pipe.
     ///
@@ -594,7 +598,7 @@ impl BlazeServer {
     /// and stderr. Returns the desired exit code. Only call this when the server
     /// is in connected state.
     pub fn communicate() {
-        // unsigned int BlazeServer::Communicate(
+        // unsigned int BazelServer::Communicate(
         //     const string &command, const vector<string> &command_args,
         //     const string &invocation_policy,
         //     const vector<RcStartupFlag> &original_startup_options,
@@ -648,7 +652,7 @@ impl BlazeServer {
         //       << "Releasing client lock, let the server manage concurrent requests.";
         //   blaze::ReleaseLock(&blaze_lock_);
         //
-        //   std::thread cancel_thread(&BlazeServer::CancelThread, this);
+        //   std::thread cancel_thread(&BazelServer::CancelThread, this);
         //   bool command_id_set = false;
         //   bool pipe_broken = false;
         //   command_server::RunResponse final_response;
@@ -773,7 +777,7 @@ impl BlazeServer {
     }
 
     fn send_action() {
-        // void BlazeServer::send_action(CancelThreadAction action) {
+        // void BazelServer::send_action(CancelThreadAction action) {
 
         unimplemented!();
         //   char msg = action;
@@ -792,7 +796,7 @@ impl BlazeServer {
     }
 }
 
-// static BlazeServer *blaze_server;
+// static BazelServer *blaze_server;
 
 // TODO(laszlocsomor) 2016-11-24: release the `blaze_server` object. Currently
 // nothing deletes it. Be careful that some functions may call exit(2) or
@@ -1125,7 +1129,7 @@ fn run_server_mode() {
     //     const blaze_util::Path &server_exe, const vector<string> &server_exe_args,
     //     const blaze_util::Path &server_dir, const WorkspaceLayout &workspace_layout,
     //     const string &workspace, const OptionProcessor &option_processor,
-    //     const StartupOptions &startup_options, BlazeServer *server) {
+    //     const StartupOptions &startup_options, BazelServer *server) {
 
     unimplemented!();
     //   if (startup_options.batch) {
@@ -1168,7 +1172,7 @@ fn run_batch_mode() {
     //     const OptionProcessor &option_processor,
     //     const StartupOptions &startup_options, LoggingInfo *logging_info,
     //     const DurationMillis extract_data_duration,
-    //     const DurationMillis command_wait_duration_ms, BlazeServer *server) {
+    //     const DurationMillis command_wait_duration_ms, BazelServer *server) {
 
     unimplemented!();
     //   if (server->Connected()) {
@@ -1271,8 +1275,8 @@ fn connect_or_die() {
     // static void connect_or_die(const OptionProcessor &option_processor,
     //                          const StartupOptions &startup_options,
     //                          const int server_pid,
-    //                          BlazeServerStartup *server_startup,
-    //                          BlazeServer *server) {
+    //                          BazelServerStartup *server_startup,
+    //                          BazelServer *server) {
 
     unimplemented!();
     // Give the server two minutes to start up. That's enough to connect with a
@@ -1356,7 +1360,7 @@ fn ensure_previous_server_process_terminated() {
 //     const blaze_util::Path &server_dir, const WorkspaceLayout &workspace_layout,
 //     const string &workspace, const OptionProcessor &option_processor,
 //     const StartupOptions &startup_options, LoggingInfo *logging_info,
-//     BlazeServer *server) {
+//     BazelServer *server) {
 //   // Delete the old command_port file if it already exists. Otherwise we might
 //   // run into the race condition that we read the old command_port file before
 //   // the new server has written the new file and we try to connect to the old
@@ -1385,7 +1389,7 @@ fn ensure_previous_server_process_terminated() {
 //
 //   BAZEL_LOG(USER) << "Starting local " << startup_options.product_name
 //                   << " server and connecting to it...";
-//   BlazeServerStartup *server_startup;
+//   BazelServerStartup *server_startup;
 //   const int server_pid = ExecuteDaemon(
 //       server_exe, server_exe_args, PrepareEnvironmentForJvm(),
 //       server->process_info().jvm_log_file_,
@@ -1635,7 +1639,7 @@ fn ensure_previous_server_process_terminated() {
 // static bool KillRunningServerIfDifferentStartupOptions(
 //     const StartupOptions &startup_options,
 //     const vector<string> &server_exe_args, LoggingInfo *logging_info,
-//     BlazeServer *server) {
+//     BazelServer *server) {
 //   if (!server->Connected()) {
 //     return false;
 //   }
@@ -1672,7 +1676,7 @@ fn ensure_previous_server_process_terminated() {
 // // server lock acquired.
 // static void EnsureCorrectRunningVersion(const StartupOptions &startup_options,
 //                                         LoggingInfo *logging_info,
-//                                         BlazeServer *server) {
+//                                         BazelServer *server) {
 //   // Read the previous installation's semaphore symlink in output_base. If the
 //   // target dirs don't match, or if the symlink was not present, then kill any
 //   // running servers. Lastly, symlink to our installation so others know which
@@ -1725,7 +1729,7 @@ fn ensure_previous_server_process_terminated() {
 //     const string &workspace, const OptionProcessor &option_processor,
 //     const StartupOptions &startup_options, LoggingInfo *logging_info,
 //     const DurationMillis extract_data_duration,
-//     const DurationMillis command_wait_duration_ms, BlazeServer *server) {
+//     const DurationMillis command_wait_duration_ms, BazelServer *server) {
 //   while (true) {
 //     if (!server->Connected()) {
 //       StartServerAndConnect(server_exe, server_exe_args, server_dir,
@@ -1989,86 +1993,149 @@ fn print_version_info(self_path: &str, product_name: &str) {
     println!("{} {}", product_name, build_labels);
 }
 
-// static void RunLauncher(const string &self_path,
-//                         const vector<string> &archive_contents,
-//                         const string &install_md5,
-//                         const StartupOptions &startup_options,
-//                         const OptionProcessor &option_processor,
-//                         const WorkspaceLayout &workspace_layout,
-//                         const string &workspace, LoggingInfo *logging_info) {
-//   blaze_server = new BlazeServer(startup_options);
-//
-//   const DurationMillis command_wait_duration_ms(blaze_server->acquire_lock());
-//   BAZEL_LOG(INFO) << "Acquired the client lock, waited "
-//                   << command_wait_duration_ms.millis << " milliseconds";
-//
-//   WarnFilesystemType(startup_options.output_base);
-//
-//   const DurationMillis extract_data_duration = ExtractData(
-//       self_path, archive_contents, install_md5, startup_options, logging_info);
-//
-//   blaze_server->Connect();
-//
-//   if (!startup_options.batch && "shutdown" == option_processor.GetCommand() &&
-//       !blaze_server->Connected()) {
-//     // TODO(b/134525510): Connected() can return false when the server process
-//     // is alive but unresponsive, so bailing early here might not always be the
-//     // right thing to do.
-//     return;
-//   }
-//
-//   EnsureCorrectRunningVersion(startup_options, logging_info, blaze_server);
-//
-//   const blaze_util::Path jvm_path = startup_options.GetJvm();
-//   const string server_jar_path = get_server_jar_path(archive_contents);
-//
-//   const blaze_util::Path server_exe =
-//       startup_options.GetExe(jvm_path, server_jar_path);
-//
-//   vector<string> server_exe_args =
-//       get_server_exe_args(jvm_path, server_jar_path, archive_contents, install_md5,
-//                        workspace_layout, workspace, startup_options);
-// #if defined(__OpenBSD__)
-//   // When spawning the server's JVM process, we normally set argv[0] to
-//   // "bazel(workspace)". On OpenBSD, doing so causes the JVM process to fail
-//   // during startup; ld.so fails to find a shared library that exists in
-//   // /usr/local/jdk-1.8.0/jre/lib/amd64. Setting LD_LIBRARY_PATH does not help,
-//   // but setting argv[0] to the JVM binary's path
-//   // (/usr/local/jdk-1.8.0/bin/java) allows the JVM process to run. The JVM
-//   // process apparently tries to compute a path to where the shared libraries
-//   // should be, via a relative path from the JVM executable's path -- but
-//   // OpenBSD does not provide a way for a process to determine a path to its
-//   // own executable, and so the JVM falls back to searching the PATH for
-//   // argv[0], which of course fails when argv[0] looks like "bazel(workspace)".
-//   //
-//   // TODO(aldersondrive): This hack is unnecessary on FreeBSD, but the relevant
-//   // OpenJDK code doesn't seem to include anything FreeBSD-specific.
-//   // Investigate why and possibly remove this.
-//   server_exe_args[0] = server_exe.AsNativePath();
-// #endif
-//
-//   if (KillRunningServerIfDifferentStartupOptions(
-//           startup_options, server_exe_args, logging_info, blaze_server) &&
-//       "shutdown" == option_processor.GetCommand()) {
-//     return;
-//   }
-//
-//   const blaze_util::Path server_dir =
-//       blaze_util::Path(startup_options.output_base).GetRelative("server");
-//   if (is_server_mode(option_processor.GetCommand())) {
-//     run_server_mode(server_exe, server_exe_args, server_dir, workspace_layout,
-//                   workspace, option_processor, startup_options, blaze_server);
-//   } else if (startup_options.batch) {
-//     run_batch_mode(server_exe, server_exe_args, workspace_layout, workspace,
-//                  option_processor, startup_options, logging_info,
-//                  extract_data_duration, command_wait_duration_ms, blaze_server);
-//   } else {
-//     RunClientServerMode(server_exe, server_exe_args, server_dir,
-//                         workspace_layout, workspace, option_processor,
-//                         startup_options, logging_info, extract_data_duration,
-//                         command_wait_duration_ms, blaze_server);
-//   }
-// }
+fn run_launcher(
+    log: slog::Logger,
+    _self_path: String,
+    // const vector<string> &archive_contents,
+    // const string &install_md5,
+    // const StartupOptions &startup_options,
+    // const OptionProcessor &option_processor,
+    // const WorkspaceLayout &workspace_layout,
+    _workspace: String,
+    // LoggingInfo *logging_info,
+) -> Result<(), exit_code::ExitCode>{
+    info!(log, "run_launcher");
+
+    //   blaze_server = new BazelServer(startup_options);
+    let blaze_server = BazelServer::new(
+        log.new(o!("component" => "bazel-server")),
+         // startup_options,
+    );
+
+    //   const DurationMillis command_wait_duration_ms(blaze_server->acquire_lock());
+    let command_wait = blaze_server.acquire_lock();
+
+    //   BAZEL_LOG(INFO) << "Acquired the client lock, waited "
+    //                   << command_wait_duration_ms.millis << " milliseconds";
+    info!(log,
+        "Acquired the client lock, waited command_wait_duration_ms.millis milliseconds";
+        "wait_duration" => format!("{:?}", command_wait),
+    );
+
+    //   WarnFilesystemType(startup_options.output_base);
+
+    //   const DurationMillis extract_data_duration = ExtractData(
+    //       self_path, archive_contents, install_md5, startup_options, logging_info);
+
+    //   blaze_server->Connect();
+
+    //   if (!startup_options.batch && "shutdown" == option_processor.GetCommand() &&
+    //       !blaze_server->Connected()) {
+    //     // TODO(b/134525510): Connected() can return false when the server process
+    //     // is alive but unresponsive, so bailing early here might not always be the
+    //     // right thing to do.
+    //     return;
+    //   }
+
+    //   EnsureCorrectRunningVersion(startup_options, logging_info, blaze_server);
+
+    //   const blaze_util::Path jvm_path = startup_options.GetJvm();
+    //   const string server_jar_path = get_server_jar_path(archive_contents);
+
+    //   const blaze_util::Path server_exe =
+    //       startup_options.GetExe(jvm_path, server_jar_path);
+
+    //   vector<string> server_exe_args =
+    //       get_server_exe_args(jvm_path, server_jar_path, archive_contents, install_md5,
+    //                        workspace_layout, workspace, startup_options);
+    // #if defined(__OpenBSD__)
+    //   // When spawning the server's JVM process, we normally set argv[0] to
+    //   // "bazel(workspace)". On OpenBSD, doing so causes the JVM process to fail
+    //   // during startup; ld.so fails to find a shared library that exists in
+    //   // /usr/local/jdk-1.8.0/jre/lib/amd64. Setting LD_LIBRARY_PATH does not help,
+    //   // but setting argv[0] to the JVM binary's path
+    //   // (/usr/local/jdk-1.8.0/bin/java) allows the JVM process to run. The JVM
+    //   // process apparently tries to compute a path to where the shared libraries
+    //   // should be, via a relative path from the JVM executable's path -- but
+    //   // OpenBSD does not provide a way for a process to determine a path to its
+    //   // own executable, and so the JVM falls back to searching the PATH for
+    //   // argv[0], which of course fails when argv[0] looks like "bazel(workspace)".
+    //   //
+    //   // TODO(aldersondrive): This hack is unnecessary on FreeBSD, but the relevant
+    //   // OpenJDK code doesn't seem to include anything FreeBSD-specific.
+    //   // Investigate why and possibly remove this.
+    //   server_exe_args[0] = server_exe.AsNativePath();
+    // #endif
+
+    //   if (KillRunningServerIfDifferentStartupOptions(
+    //           startup_options, server_exe_args, logging_info, blaze_server) &&
+    //       "shutdown" == option_processor.GetCommand()) {
+    //     return;
+    //   }
+
+    //   const blaze_util::Path server_dir = blaze_util::Path(startup_options.output_base).GetRelative("server");
+    //   if (is_server_mode(option_processor.GetCommand())) {
+    //     run_server_mode(server_exe, server_exe_args, server_dir, workspace_layout,
+    //                   workspace, option_processor, startup_options, blaze_server);
+    //   } else if (startup_options.batch) {
+    //     run_batch_mode(server_exe, server_exe_args, workspace_layout, workspace,
+    //                  option_processor, startup_options, logging_info,
+    //                  extract_data_duration, command_wait_duration_ms, blaze_server);
+    //   } else {
+    //     RunClientServerMode(server_exe, server_exe_args, server_dir,
+    //                         workspace_layout, workspace, option_processor,
+    //                         startup_options, logging_info, extract_data_duration,
+    //                         command_wait_duration_ms, blaze_server);
+    //   }
+
+    // FIXME fake
+
+    let cwd = std::env::current_dir().unwrap();
+    let w = match workspace_layout::find_workspace(cwd.to_str().unwrap()) {
+        Ok(w) => w,
+        Err(e) => {
+            error!(log, "get_workspace"; "error" => format!("{:#?}", e));
+            return Err(exit_code::ExitCode::InternalError);
+        }
+    };
+    info!(log, "get_workspace"; "dir" => format!("{:#?}", w));
+
+    let pretty_name = workspace_layout::pretty_workspace_name(w);
+    info!(log, "pretty_workspace_name"; "name" => format!("{:#?}", pretty_name));
+
+    let p = dirs::home_dir().unwrap().join(".bazelrc");
+    let filename = p.to_str().unwrap();
+
+    let rc = match rc_file::RcFile::new(
+        log.new(o!("component" => "rc_parser")),
+        filename,
+        "dummy-workspace",
+    ) {
+        Ok(rc) => rc,
+        Err(e) => {
+            error!(log, "{:#?}", e);
+            return Err(exit_code::ExitCode::InternalError);
+        }
+    };
+    info!(log, "success"; "rc" => format!("{:#?}", rc));
+
+    // FIXME end fake
+
+    // FIXME GRPC Stub demo
+
+    let mut run_req = command_server_rust_proto::RunRequest::new();
+    run_req.set_cookie("this-is-the-cookie-value".to_string());
+    run_req.set_client_description("bazel-rs".to_string());
+    run_req.set_arg(protobuf::RepeatedField::from(vec![
+        Vec::<u8>::from("build"),
+        Vec::<u8>::from("//src:bazel-rs"),
+    ]));
+    info!(log, "grpc stub demo"; "run_req" => format!("{:?}", run_req));
+
+    // FIXME end GRPC Stub demo
+
+    Ok(())
+}
 
 fn logger() -> slog::Logger {
     let decorator = slog_term::TermDecorator::new().build();
@@ -2129,6 +2196,9 @@ pub fn main(
     // #endif  // if defined(_WIN32) || defined(__CYGWIN__)
 
     //   const string workspace = workspace_layout->GetWorkspace(cwd);
+    // FIXME
+    let workspace = String::from("FIXME");
+
     //   ParseOptionsOrDie(cwd, workspace, *option_processor, argc, argv);
     //   StartupOptions *startup_options = option_processor->GetParsedStartupOptions();
     //   startup_options->MaybeLogStartupOptionWarnings();
@@ -2156,62 +2226,26 @@ pub fn main(
     //   string install_md5;
     //   determine_archive_contents(self_path, &archive_contents, &install_md5);
 
+
+
     //   UpdateConfiguration(install_md5, workspace,
     //                       is_server_mode(option_processor->GetCommand()),
     //                       startup_options);
 
-    //   RunLauncher(self_path, archive_contents, install_md5, *startup_options,
-    //               *option_processor, *workspace_layout, workspace, &logging_info);
-
-    // FIXME fake
-
-    info!(log, "main"; "args" => format!("{:?}", args));
-
-    let cwd = std::env::current_dir().unwrap();
-    let w = match workspace_layout::find_workspace(cwd.to_str().unwrap()) {
-        Ok(w) => w,
-        Err(e) => {
-            error!(log, "get_workspace"; "error" => format!("{:#?}", e));
-            return exit_code::ExitCode::InternalError;
-        }
-    };
-    info!(log, "get_workspace"; "dir" => format!("{:#?}", w));
-
-    let pretty_name = workspace_layout::pretty_workspace_name(w);
-    info!(log, "pretty_workspace_name"; "name" => format!("{:#?}", pretty_name));
-
-    let p = dirs::home_dir().unwrap().join(".bazelrc");
-    let filename = p.to_str().unwrap();
-
-    let rc = match rc_file::RcFile::new(
-        log.new(o!("component" => "rc_parser")),
-        filename,
-        "dummy-workspace",
+    match run_launcher(
+        log,
+        self_path.to_str().unwrap().to_owned(),
+        // archive_contents,
+        // install_md5,
+        // *startup_options,
+        // *option_processor,
+        // *workspace_layout,
+        workspace,
+        // &logging_info,
     ) {
-        Ok(rc) => rc,
-        Err(e) => {
-            error!(log, "{:#?}", e);
-            return exit_code::ExitCode::InternalError;
-        }
-    };
-    info!(log, "success"; "rc" => format!("{:#?}", rc));
-
-    // FIXME end fake
-
-    // FIXME GRPC Stub demo
-
-    let mut run_req = command_server_rust_proto::RunRequest::new();
-    run_req.set_cookie("this-is-the-cookie-value".to_string());
-    run_req.set_client_description("bazel-rs".to_string());
-    run_req.set_arg(protobuf::RepeatedField::from(vec![
-        Vec::<u8>::from("build"),
-        Vec::<u8>::from("//src:bazel-rs"),
-    ]));
-    info!(log, "grpc stub demo"; "run_req" => format!("{:?}", run_req));
-
-    // FIXME end GRPC Stub demo
-
-    exit_code::ExitCode::Success
+        Ok(_) => { exit_code::ExitCode::Success }
+        Err(e) => { e }
+    }
 }
 
 // static void null_grpc_log_function(gpr_log_func_args *args) {}
