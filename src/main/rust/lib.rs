@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![allow(unused_variables)]
 
 //! Bootstrap and client code for Bazel server.
 //!
@@ -99,9 +100,13 @@ extern crate zip;
 mod archive_utils;
 mod bazel_startup_options;
 mod exit_code;
+mod option_processor;
 mod rc_file;
 mod startup_options;
 mod workspace_layout;
+
+pub use crate::option_processor::OptionProcessor;
+pub use crate::startup_options::StartupOptions;
 
 extern crate command_server_rust_proto;
 
@@ -284,9 +289,7 @@ struct BazelServer {
 }
 
 impl BazelServer {
-    pub fn new(
-        logger: slog::Logger,
-    ) -> Self {
+    pub fn new(logger: slog::Logger) -> Self {
         // BazelServer::BazelServer(const StartupOptions &startup_options)
         //     : process_info_(startup_options.output_base,
         //                     startup_options.server_jvm_out),
@@ -832,7 +835,7 @@ fn get_server_exe_args() -> Vec<String> {
     //
     //   // e.g. A Blaze server process running in ~/src/build_root (where there's a
     //   // ~/src/build_root/WORKSPACE file) will appear in ps(1) as "blaze(src)".
-    //   result.push_back(startup_options.GetLowercaseProductName() + "(" +
+    //   result.push_back(startup_options.get_lowercase_product_name() + "(" +
     //                    workspace_layout.GetPrettyWorkspaceName(workspace) + ")");
     //   startup_options.AddJVMArgumentPrefix(jvm_path.GetParent().GetParent(),
     //                                        &result);
@@ -1108,8 +1111,7 @@ fn ensure_server_dir() {
 
 /// Do a chdir into the workspace, and die if it fails.
 fn go_to_workspace() {
-    // static const void go_to_workspace(const WorkspaceLayout &workspace_layout,
-    //                                 const string &workspace) {
+    // static const void go_to_workspace(const WorkspaceLayout &workspace_layout, const string &workspace) {
 
     unimplemented!();
     //   if (workspace_layout.InWorkspace(workspace) && !blaze_util::ChangeDirectory(workspace)) {
@@ -1190,7 +1192,7 @@ fn run_batch_mode() {
     //       option_processor.GetCommandArguments();
     //
     //   if (!command_arguments.empty() && command == "shutdown") {
-    //     string product = startup_options.GetLowercaseProductName();
+    //     string product = startup_options.get_lowercase_product_name();
     //     BAZEL_LOG(WARNING)
     //         << "Running command \"shutdown\" in batch mode.  Batch mode is "
     //            "triggered\nwhen not running "
@@ -1993,23 +1995,23 @@ fn print_version_info(self_path: &str, product_name: &str) {
     println!("{} {}", product_name, build_labels);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_launcher(
     log: slog::Logger,
-    _self_path: String,
-    // const vector<string> &archive_contents,
-    // const string &install_md5,
-    // const StartupOptions &startup_options,
-    // const OptionProcessor &option_processor,
-    // const WorkspaceLayout &workspace_layout,
-    _workspace: String,
-    // LoggingInfo *logging_info,
-) -> Result<(), exit_code::ExitCode>{
+    self_path: String,
+    archive_contents: Vec<String>,
+    install_md5: String,
+    startup_options: StartupOptions,
+    option_processor: OptionProcessor,
+    workspace: String,
+    logging_info: LoggingInfo,
+) -> Result<(), exit_code::ExitCode> {
     info!(log, "run_launcher");
 
     //   blaze_server = new BazelServer(startup_options);
     let blaze_server = BazelServer::new(
         log.new(o!("component" => "bazel-server")),
-         // startup_options,
+        // startup_options,
     );
 
     //   const DurationMillis command_wait_duration_ms(blaze_server->acquire_lock());
@@ -2043,7 +2045,7 @@ fn run_launcher(
     //   const string server_jar_path = get_server_jar_path(archive_contents);
 
     //   const blaze_util::Path server_exe =
-    //       startup_options.GetExe(jvm_path, server_jar_path);
+    //       startup_options.get_exe(jvm_path, server_jar_path);
 
     //   vector<string> server_exe_args =
     //       get_server_exe_args(jvm_path, server_jar_path, archive_contents, install_md5,
@@ -2146,8 +2148,7 @@ fn logger() -> slog::Logger {
 
 pub fn main(
     args: Vec<String>,
-    // WorkspaceLayout* workspace_layout,
-    // OptionProcessor* option_processor,
+    option_processor: OptionProcessor,
     start_time: std::time::SystemTime,
 ) -> exit_code::ExitCode {
     // Logging must be set first to assure no log statements are missed.
@@ -2157,7 +2158,7 @@ pub fn main(
     let self_path = std::env::current_exe().unwrap();
 
     if args.len() == 2 && args[1] == "--version" {
-        // print_version_info(self_path, option_processor->GetLowercaseProductName());
+        // print_version_info(self_path, option_processor->get_lowercase_product_name());
         print_version_info(self_path.to_str().unwrap(), "bazel");
         return exit_code::ExitCode::Success;
     }
@@ -2200,6 +2201,8 @@ pub fn main(
     let workspace = String::from("FIXME");
 
     //   ParseOptionsOrDie(cwd, workspace, *option_processor, argc, argv);
+
+    let startup_options = StartupOptions::default();
     //   StartupOptions *startup_options = option_processor->GetParsedStartupOptions();
     //   startup_options->MaybeLogStartupOptionWarnings();
 
@@ -2222,29 +2225,23 @@ pub fn main(
     //     startup_options->batch = true;
     //   }
 
-    //   vector<string> archive_contents;
-    //   string install_md5;
-    //   determine_archive_contents(self_path, &archive_contents, &install_md5);
+    let (archive_contents, install_md5) =
+        archive_utils::determine_archive_contents(self_path.to_str().unwrap()).unwrap();
 
-
-
-    //   UpdateConfiguration(install_md5, workspace,
-    //                       is_server_mode(option_processor->GetCommand()),
-    //                       startup_options);
+    // UpdateConfiguration(install_md5, workspace, is_server_mode(option_processor->GetCommand()), startup_options);
 
     match run_launcher(
         log,
         self_path.to_str().unwrap().to_owned(),
-        // archive_contents,
-        // install_md5,
-        // *startup_options,
-        // *option_processor,
-        // *workspace_layout,
+        archive_contents,
+        install_md5,
+        startup_options,
+        option_processor,
         workspace,
-        // &logging_info,
+        logging_info,
     ) {
-        Ok(_) => { exit_code::ExitCode::Success }
-        Err(e) => { e }
+        Ok(_) => exit_code::ExitCode::Success,
+        Err(e) => e,
     }
 }
 

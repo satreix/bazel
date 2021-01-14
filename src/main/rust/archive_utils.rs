@@ -112,7 +112,7 @@ impl PartialZipExtractor {
 
 /// Determines the contents of the archive, storing the names of the contained
 /// files into `files` and the install md5 key into `install_md5`.
-pub fn determine_archive_contents() {
+pub fn determine_archive_contents(archive_path: &str) -> Result<(Vec<String>, String), String> {
     // void determine_archive_contents(const std::string &archive_path,
     //                               std::vector<std::string> *files,
     //                               std::string *install_md5);

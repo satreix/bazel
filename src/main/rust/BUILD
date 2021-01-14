@@ -8,6 +8,7 @@ rust_library(
         "bazel_startup_options.rs",
         "exit_code.rs",
         "lib.rs",
+        "option_processor.rs",
         "rc_file.rs",
         "startup_options.rs",
         "workspace_layout.rs",

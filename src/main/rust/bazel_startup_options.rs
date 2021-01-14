@@ -7,8 +7,10 @@
 // #include "src/main/cpp/util/logging.h"
 // #include "src/main/cpp/workspace_layout.h"
 
+use std::path::PathBuf;
+
 use crate::exit_code::ExitCode;
-use crate::workspace_layout::WorkspaceLayout;
+use crate::startup_options::{RcStartupFlag, StartupOptionsTrait};
 
 /// BazelStartupOptions contains the startup options that are Bazel-specific.
 struct BazelStartupOptions {
@@ -24,7 +26,6 @@ struct BazelStartupOptions {
     //
     //  protected:
     //   std::string GetRcFileBaseName() const override { return ".bazelrc"; }
-
     user_bazelrc: String,
     use_system_rc: bool,
     use_workspace_rc: bool,
@@ -34,7 +35,7 @@ struct BazelStartupOptions {
 }
 
 impl BazelStartupOptions {
-    fn new(_workspace_layout: WorkspaceLayout) -> Self{
+    fn new() -> Self {
         // BazelStartupOptions::BazelStartupOptions(const WorkspaceLayout *workspace_layout)
         //     : StartupOptions("Bazel", workspace_layout) {
         // FIXME there is not inheritance in Rust
@@ -45,12 +46,12 @@ impl BazelStartupOptions {
         //   RegisterNullaryStartupFlagNoRc("system_rc", &use_system_rc);
         //   RegisterNullaryStartupFlagNoRc("workspace_rc", &use_workspace_rc);
         //   RegisterUnaryStartupFlag("bazelrc");
-        Self{
+        Self {
             user_bazelrc: "".to_string(),
             use_system_rc: true,
             use_workspace_rc: true,
             use_home_rc: true,
-            use_master_bazelrc: true
+            use_master_bazelrc: true,
         }
     }
 
@@ -124,4 +125,30 @@ impl BazelStartupOptions {
     //     std::vector<std::string> *result) const {
     //   StartupOptions::AddExtraOptions(result);
     // }
+}
+
+impl StartupOptionsTrait for BazelStartupOptions {
+    fn process_args(rcstartup_flags: Vec<RcStartupFlag>) -> Result<(), (String, ExitCode)> {
+        unimplemented!()
+    }
+
+    fn add_extra_options(result: Vec<String>) {
+        unimplemented!()
+    }
+
+    fn get_jvm() -> PathBuf {
+        unimplemented!()
+    }
+
+    fn get_exe(jvm: PathBuf, jar_path: &str) -> PathBuf {
+        unimplemented!()
+    }
+
+    fn add_jvm_argument_prefix(javabase: PathBuf, result: Vec<String>) {
+        unimplemented!()
+    }
+
+    fn add_jvm_argument_suffix(real_install_dir: PathBuf, jar_path: String, result: Vec<String>) {
+        unimplemented!()
+    }
 }

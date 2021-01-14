@@ -5,8 +5,6 @@ const WORKSPACE_PREFIX: &str = "%workspace%/";
 use std::ffi::OsStr;
 use std::path::Path;
 
-pub struct WorkspaceLayout {}
-
 // FIXME implement for other platforms from blaze::GetOutputRoot
 #[cfg(target_os = "macos")]
 pub fn get_output_root() -> String {
