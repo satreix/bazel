@@ -34,6 +34,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::exit_code::ExitCode;
+use std::time::Duration;
 
 type SpecialNullaryFlagHandler = fn(bool);
 
@@ -122,7 +123,6 @@ pub trait StartupOptionsTrait {
 /// TODO(bazel-team): The encapsulation is not quite right -- there are some
 /// places in blaze.cc where some of these fields are explicitly modified. Their
 /// names also don't conform to the style guide.
-#[derive(Default)] // FIXME remove default
 pub struct StartupOptions {
     //  public:
     //   virtual ~StartupOptions();
@@ -132,9 +132,7 @@ pub struct StartupOptions {
     //   //
     //   // Returns the exit code after this operation. "error" will be set to a
     //   // descriptive string for any value other than blaze_exit_code::SUCCESS.
-    //   blaze_exit_code::ExitCode AddJVMArguments(
-    //       const blaze_util::Path &server_javabase, std::vector<std::string> *result,
-    //       const std::vector<std::string> &user_options, std::string *error) const;
+    //   blaze_exit_code::ExitCode AddJVMArguments(const blaze_util::Path &server_javabase, std::vector<std::string> *result, const std::vector<std::string> &user_options, std::string *error) const;
     //
     //   // Checks whether "arg" is a valid nullary option (e.g. "--master_bazelrc" or
     //   // "--nomaster_bazelrc").
@@ -149,86 +147,77 @@ pub struct StartupOptions {
     //   //
     //   // Therefore, callers of this function should look at the return value and
     //   // then either look at "result" (on true) or "error" (on false).
-    //   bool MaybeCheckValidNullary(const std::string &arg, bool *result,
-    //                               std::string *error) const;
+    //   bool MaybeCheckValidNullary(const std::string &arg, bool *result, std::string *error) const;
     //
     //   // Checks whether the argument is a valid unary option.
     //   // E.g. --blazerc=foo, --blazerc foo.
     //   bool IsUnary(const std::string& arg) const;
     //
     //   std::string get_lowercase_product_name() const;
-    //
-    //   // The capitalized name of this binary.
-    //   const std::string product_name;
-    //
-    //   // If supplied, alternate location to write the blaze server's jvm's stdout.
-    //   // Otherwise a default path in the output base is used.
+    /// The capitalized name of this binary.
+    product_name: String,
+
+    /// If supplied, alternate location to write the blaze server's jvm's stdout.
+    /// Otherwise a default path in the output base is used.
+    pub server_jvm_out: Option<String>,
     //   blaze_util::Path server_jvm_out;
-    //
-    //   // If supplied, alternate location to write a serialized failure_detail proto.
-    //   // Otherwise a default path in the output base is used.
+    /// If supplied, alternate location to write a serialized failure_detail proto.
+    /// Otherwise a default path in the output base is used.
+    failure_detail_out: Option<String>,
     //   blaze_util::Path failure_detail_out;
-    //
-    //   // Blaze's output base.  Everything is relative to this.  See
-    //   // the BlazeDirectories Java class for details.
+    /// Blaze's output base.  Everything is relative to this.  See
+    /// the BlazeDirectories Java class for details.
+    pub output_base: PathBuf,
     //   blaze_util::Path output_base;
-    //
-    //   // Installation base for a specific release installation.
+    /// Installation base for a specific release installation.
+    install_base: String,
     //   std::string install_base;
-    //
-    //   // The toplevel directory containing Blaze's output.  When Blaze is
-    //   // run by a test, we use TEST_TMPDIR, simplifying the correct
-    //   // hermetic invocation of Blaze from tests.
+    /// The toplevel directory containing Blaze's output.  When Blaze is
+    /// run by a test, we use TEST_TMPDIR, simplifying the correct
+    /// hermetic invocation of Blaze from tests.
+    output_root: String,
     //   std::string output_root;
-    //
-    //   // Blaze's output_user_root. Used only for computing install_base and
-    //   // output_base.
-    //   std::string output_user_root;
-    //
-    //   // Override more finegrained rc file flags and ignore them all.
-    //   bool ignore_all_rc_files;
-    //
-    //   // Block for the Blaze server lock. Otherwise,
-    //   // quit with non-0 exit code if lock can't
-    //   // be acquired immediately.
-    //   bool block_for_lock;
-    //
-    //   bool host_jvm_debug;
-    //
-    //   bool autodetect_server_javabase;
-    //
-    //   std::string host_jvm_profile;
-    //
-    //   std::vector<std::string> host_jvm_args;
-    //
-    //   bool batch;
-    //
-    //   // From the man page: "This policy is useful for workloads that are
-    //   // non-interactive, but do not want to lower their nice value, and for
-    //   // workloads that want a deterministic scheduling policy without
-    //   // interactivity causing extra preemptions (between the workload's tasks)."
-    //   bool batch_cpu_scheduling;
-    //
-    //   // If negative, don't mess with ionice. Otherwise, set a level from 0-7
-    //   // for best-effort scheduling. 0 is highest priority, 7 is lowest.
-    //   int io_nice_level;
-    //
-    //   int max_idle_secs;
-    //
-    //   bool shutdown_on_low_sys_mem;
-    //
-    //   bool oom_more_eagerly;
-    //
-    //   int oom_more_eagerly_threshold;
-    //
-    //   bool write_command_log;
-    //
-    //   // If true, Blaze will listen to OS-level file change notifications.
-    //   bool watchfs;
-    //
-    //   // Temporary flag for enabling EventBus exceptions to be fatal.
-    //   bool fatal_event_bus_exceptions;
-    //
+    /// Blaze's output_user_root. Used only for computing install_base and
+    /// output_base.
+    output_user_root: String,
+
+    /// Override more finegrained rc file flags and ignore them all.
+    ignore_all_rc_files: bool,
+
+    /// Block for the Blaze server lock. Otherwise,
+    /// quit with non-0 exit code if lock can't
+    /// be acquired immediately.
+    block_for_lock: bool,
+
+    host_jvm_debug: bool,
+    autodetect_server_javabase: bool,
+    host_jvm_profile: String,
+    host_jvm_args: Vec<String>,
+    batch: bool,
+
+    /// From the man page: "This policy is useful for workloads that are
+    /// non-interactive, but do not want to lower their nice value, and for
+    /// workloads that want a deterministic scheduling policy without
+    /// interactivity causing extra preemptions (between the workload's tasks)."
+    batch_cpu_scheduling: bool,
+
+    /// If negative, don't mess with ionice. Otherwise, set a level from 0-7
+    /// for best-effort scheduling. 0 is highest priority, 7 is lowest.
+    io_nice_level: i32,
+
+    max_idle_secs: i32,
+
+    shutdown_on_low_sys_mem: bool,
+    oom_more_eagerly: bool,
+    oom_more_eagerly_threshold: i32,
+    write_command_log: bool,
+
+    /// If true, Blaze will listen to OS-level file change notifications.
+    watchfs: bool,
+
+    /// Temporary flag for enabling EventBus exceptions to be fatal.
+    fatal_event_bus_exceptions: bool,
+
     //   // A string to string map specifying where each option comes from. If the
     //   // value is empty, it was on the command line, if it is a string, it comes
     //   // from a blazerc file, if a key is not present, it is the default.
@@ -251,10 +240,9 @@ pub struct StartupOptions {
     //
     //   // Port to start up the gRPC command server on. If 0, let the kernel choose.
     //   int command_port;
-    //
-    //   // Connection timeout for each gRPC connection attempt.
-    //   int connect_timeout_secs;
-    //
+    /// Connection timeout for each gRPC connection attempt.
+    pub connect_timeout: Duration,
+
     //   // Local server startup timeout duration.
     //   int local_startup_timeout_secs;
     //
@@ -386,11 +374,7 @@ pub struct StartupOptions {
     //   // Returns the exit code after processing the argument. "error" will contain
     //   // a descriptive string for any return value other than
     //   // blaze_exit_code::SUCCESS.
-    //   blaze_exit_code::ExitCode ProcessArg(const std::string &arg,
-    //                                        const std::string &next_arg,
-    //                                        const std::string &rcfile,
-    //                                        bool *is_space_separated,
-    //                                        std::string *error);
+    //   blaze_exit_code::ExitCode ProcessArg(const std::string &arg, const std::string &next_arg, const std::string &rcfile, bool *is_space_separated, std::string *error);
     /// The server javabase as provided on the commandline.
     explicit_server_javabase: PathBuf,
 
@@ -423,8 +407,47 @@ pub struct StartupOptions {
     valid_unary_startup_flags: HashSet<String>,
 
     /// Startup flags that use an alternative key name in the 'option_sources' map.
-    /// For example, "--[no]master_bazelrc" uses "blazerc" as the map key.
+    /// For example, "--master_bazelrc" uses "blazerc" as the map key.
     option_sources_key_override: HashMap<String, String>,
+}
+
+// FIXME remove default
+impl Default for StartupOptions {
+    fn default() -> Self {
+        Self {
+            product_name: "Bazel".to_string(),
+            server_jvm_out: Some(String::from("")),
+            failure_detail_out: None,
+            output_base: Default::default(),
+            install_base: "".to_string(),
+            output_root: "".to_string(),
+            output_user_root: "".to_string(),
+            ignore_all_rc_files: false,
+            block_for_lock: false,
+            host_jvm_debug: false,
+            autodetect_server_javabase: false,
+            host_jvm_profile: "".to_string(),
+            host_jvm_args: vec![],
+            batch: false,
+            batch_cpu_scheduling: false,
+            io_nice_level: 0,
+            max_idle_secs: 0,
+            shutdown_on_low_sys_mem: false,
+            oom_more_eagerly: false,
+            oom_more_eagerly_threshold: 0,
+            write_command_log: false,
+            watchfs: false,
+            fatal_event_bus_exceptions: false,
+            connect_timeout: Default::default(),
+            explicit_server_javabase: Default::default(),
+            default_server_javabase: (Default::default(), Default::default()),
+            all_nullary_startup_flags: Default::default(),
+            no_rc_nullary_startup_flags: Default::default(),
+            special_nullary_startup_flags: Default::default(),
+            valid_unary_startup_flags: Default::default(),
+            option_sources_key_override: Default::default(),
+        }
+    }
 }
 
 impl StartupOptionsTrait for StartupOptions {
@@ -504,21 +527,9 @@ impl StartupOptions {
     //   option_sources_key_override_[flag_name] = new_name;
     // }
 
-    pub fn new() -> Self {
+    pub fn new(product_name: String) -> Self {
         // StartupOptions::StartupOptions(const string &product_name, const WorkspaceLayout *workspace_layout)
         //     : product_name(product_name),
-        //       ignore_all_rc_files(false),
-        //       block_for_lock(true),
-        //       host_jvm_debug(false),
-        //       autodetect_server_javabase(true),
-        //       batch(false),
-        //       batch_cpu_scheduling(false),
-        //       io_nice_level(-1),
-        //       shutdown_on_low_sys_mem(false),
-        //       oom_more_eagerly(false),
-        //       oom_more_eagerly_threshold(100),
-        //       write_command_log(true),
-        //       watchfs(false),
         //       fatal_event_bus_exceptions(false),
         //       command_port(0),
         //       connect_timeout_secs(30),
@@ -526,8 +537,7 @@ impl StartupOptions {
         //       have_invocation_policy_(false),
         //       client_debug(false),
         //       preemptible(false),
-        //       java_logging_formatter(
-        //           "com.google.devtools.build.lib.util.SingleLineFormatter"),
+        //       java_logging_formatter("com.google.devtools.build.lib.util.SingleLineFormatter"),
         //       expand_configs_in_place(true),
         //       digest_function(),
         //       idle_server_tasks(true),
@@ -539,7 +549,40 @@ impl StartupOptions {
         //       incompatible_enable_execution_transition(false),
         //       windows_enable_symlinks(false) {
 
-        unimplemented!();
+        let ret = Self {
+            product_name,
+            server_jvm_out: None,
+            failure_detail_out: None,
+            output_base: Default::default(),
+            install_base: "".to_string(),
+            output_root: "".to_string(),
+            output_user_root: "".to_string(),
+            ignore_all_rc_files: false,
+            block_for_lock: true,
+            host_jvm_debug: false,
+            autodetect_server_javabase: true,
+            host_jvm_profile: "".to_string(),
+            host_jvm_args: vec![],
+            batch: false,
+            batch_cpu_scheduling: false,
+            io_nice_level: -1,
+            max_idle_secs: 0,
+            shutdown_on_low_sys_mem: false,
+            oom_more_eagerly: false,
+            oom_more_eagerly_threshold: 100,
+            write_command_log: true,
+            watchfs: false,
+            fatal_event_bus_exceptions: false,
+            connect_timeout: Duration::new(30, 0),
+            explicit_server_javabase: Default::default(),
+            default_server_javabase: (Default::default(), Default::default()),
+            all_nullary_startup_flags: Default::default(),
+            no_rc_nullary_startup_flags: Default::default(),
+            special_nullary_startup_flags: Default::default(),
+            valid_unary_startup_flags: Default::default(),
+            option_sources_key_override: Default::default(),
+        };
+
         //   if (blaze::IsRunningWithinTest()) {
         //     output_root = blaze_util::MakeAbsolute(blaze::GetPathEnv("TEST_TMPDIR"));
         //     max_idle_secs = 15;
@@ -603,13 +646,13 @@ impl StartupOptions {
         //   RegisterUnaryStartupFlag("output_user_root");
         //   RegisterUnaryStartupFlag("server_jvm_out");
         //   RegisterUnaryStartupFlag("failure_detail_out");
+
+        ret
     }
 
-    // string StartupOptions::get_lowercase_product_name() const {
-    //   string lowercase_product_name = product_name;
-    //   blaze_util::ToLower(&lowercase_product_name);
-    //   return lowercase_product_name;
-    // }
+    pub fn lowercase_product_name(&self) -> String {
+        self.product_name.to_lowercase()
+    }
 
     // bool StartupOptions::IsUnary(const string &arg) const {
     //   std::string::size_type i = arg.find_first_of('=');

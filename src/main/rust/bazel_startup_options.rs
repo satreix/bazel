@@ -82,23 +82,19 @@ impl BazelStartupOptions {
     // void BazelStartupOptions::MaybeLogStartupOptionWarnings() const {
     //   if (ignore_all_rc_files) {
     //     if (!user_bazelrc_.empty()) {
-    //       BAZEL_LOG(WARNING) << "Value of --bazelrc is ignored, since "
-    //                             "--ignore_all_rc_files is on.";
+    //       BAZEL_LOG(WARNING) << "Value of --bazelrc is ignored, since --ignore_all_rc_files is on.";
     //     }
     //     if ((use_home_rc) &&
     //         option_sources.find("home_rc") != option_sources.end()) {
-    //       BAZEL_LOG(WARNING) << "Explicit value of --home_rc is "
-    //                             "ignored, since --ignore_all_rc_files is on.";
+    //       BAZEL_LOG(WARNING) << "Explicit value of --home_rc is ignored, since --ignore_all_rc_files is on.";
     //     }
     //     if ((use_system_rc) &&
     //         option_sources.find("system_rc") != option_sources.end()) {
-    //       BAZEL_LOG(WARNING) << "Explicit value of --system_rc is "
-    //                             "ignored, since --ignore_all_rc_files is on.";
+    //       BAZEL_LOG(WARNING) << "Explicit value of --system_rc is ignored, since --ignore_all_rc_files is on.";
     //     }
     //     if ((use_workspace_rc) &&
     //         option_sources.find("workspace_rc") != option_sources.end()) {
-    //       BAZEL_LOG(WARNING) << "Explicit value of --workspace_rc is "
-    //                             "ignored, since --ignore_all_rc_files is on.";
+    //       BAZEL_LOG(WARNING) << "Explicit value of --workspace_rc is ignored, since --ignore_all_rc_files is on.";
     //     }
     //   }
     //   bool output_user_root_has_space =
@@ -121,8 +117,7 @@ impl BazelStartupOptions {
     //   }
     // }
     //
-    // void BazelStartupOptions::AddExtraOptions(
-    //     std::vector<std::string> *result) const {
+    // void BazelStartupOptions::AddExtraOptions(std::vector<std::string> *result) const {
     //   StartupOptions::AddExtraOptions(result);
     // }
 }

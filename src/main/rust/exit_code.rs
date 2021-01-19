@@ -27,3 +27,14 @@ pub enum ExitCode {
     // This exit code should be a last resort.
     InternalError = 37,
 }
+
+pub struct Error {
+    exit_code: ExitCode,
+    reason: String,
+}
+
+impl Error {
+    pub fn new(exit_code: ExitCode, reason: String) -> Self {
+        Self { exit_code, reason }
+    }
+}

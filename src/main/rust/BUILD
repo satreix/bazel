@@ -1,5 +1,10 @@
 load("@io_bazel_rules_rust//proto:toolchain.bzl", "GRPC_COMPILE_DEPS")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_clippy", "rust_library", "rust_test")
+load("@io_bazel_rules_rust//rust:rust.bzl", "rust_clippy", "rust_doc", "rust_library", "rust_test")
+
+rust_doc(
+      name = "bazel_doc",
+      dep = ":bazel",
+  )
 
 rust_library(
     name = "bazel",
@@ -10,6 +15,7 @@ rust_library(
         "lib.rs",
         "option_processor.rs",
         "rc_file.rs",
+        "server_process_info.rs",
         "startup_options.rs",
         "workspace_layout.rs",
     ],
@@ -19,6 +25,7 @@ rust_library(
         "//cargo:slog",
         "//cargo:slog_async",
         "//cargo:slog_term",
+        "//cargo:whoami",
         "//cargo:zip",
         "//src/main/protobuf:command_server_rust_proto",
     ] + GRPC_COMPILE_DEPS,

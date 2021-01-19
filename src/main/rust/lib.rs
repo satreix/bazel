@@ -92,9 +92,10 @@ use std::path::Path;
 extern crate dirs;
 extern crate protobuf;
 extern crate slog;
-use slog::{error, info, o, Drain};
+use slog::{debug, info, o, Drain};
 extern crate slog_async;
 extern crate slog_term;
+extern crate whoami; // FIXME remove this unrelated crate
 extern crate zip;
 
 mod archive_utils;
@@ -102,11 +103,15 @@ mod bazel_startup_options;
 mod exit_code;
 mod option_processor;
 mod rc_file;
+mod server_process_info;
 mod startup_options;
 mod workspace_layout;
 
+use crate::exit_code::ExitCode;
 pub use crate::option_processor::OptionProcessor;
+use crate::server_process_info::ServerProcessInfo;
 pub use crate::startup_options::StartupOptions;
+use std::time::Duration;
 
 extern crate command_server_rust_proto;
 
@@ -261,11 +266,18 @@ impl LoggingInfo {
     }
 }
 
+enum CancelThreadAction {
+    Nothing,
+    Join,
+    Cancel,
+    CommandIdReceived,
+}
+
 struct BazelServer {
     logger: slog::Logger,
 
     //   BlazeLock blaze_lock_;
-    //   enum CancelThreadAction { NOTHING, JOIN, CANCEL, COMMAND_ID_RECEIVED };
+
     //   std::unique_ptr<CommandServer::Stub> client_;
     request_cookie: String,
     response_cookie: String,
@@ -279,9 +291,8 @@ struct BazelServer {
     /// Pipe that the main thread sends actions to and the cancel thread receives
     /// actions from.
     // std::unique_ptr<blaze_util::IPipe> pipe_;
-
-    // ServerProcessInfo process_info_;
-    connect_timeout_secs: i32,
+    process_info: ServerProcessInfo,
+    connect_timeout: Duration,
     batch: bool,
     block_for_lock: bool,
     preemptible: bool,
@@ -289,15 +300,33 @@ struct BazelServer {
 }
 
 impl BazelServer {
-    pub fn new(logger: slog::Logger) -> Self {
+    pub fn new(logger: slog::Logger, startup_options: StartupOptions) -> Self {
         // BazelServer::BazelServer(const StartupOptions &startup_options)
-        //     : process_info_(startup_options.output_base,
-        //                     startup_options.server_jvm_out),
+        //     : process_info_(startup_options.output_base, startup_options.server_jvm_out),
         //       connect_timeout_secs_(startup_options.connect_timeout_secs),
         //       batch_(startup_options.batch),
         //       block_for_lock_(startup_options.block_for_lock),
         //       preemptible_(startup_options.preemptible),
         //       output_base_(startup_options.output_base) {
+
+        let ret = Self {
+            logger,
+            request_cookie: "".to_string(),
+            response_cookie: "".to_string(),
+            command_id: "".to_string(),
+
+            // process_info_(startup_options.output_base, startup_options.server_jvm_out)
+            process_info: ServerProcessInfo::new(
+                startup_options.output_base.to_str().unwrap(),
+                startup_options.server_jvm_out.unwrap().as_str(),
+            ),
+
+            connect_timeout: startup_options.connect_timeout,
+            batch: false,
+            block_for_lock: false,
+            preemptible: false,
+            output_base: "".to_string(),
+        };
 
         //   if (!startup_options.client_debug) {
         //     gpr_set_log_function(null_grpc_log_function);
@@ -309,29 +338,16 @@ impl BazelServer {
         //         << "Couldn't create pipe: " << GetLastErrorString();
         //   }
 
-        Self {
-            logger,
-            request_cookie: "".to_string(),
-            response_cookie: "".to_string(),
-            command_id: "".to_string(),
-            connect_timeout_secs: 0,
-            batch: false,
-            block_for_lock: false,
-            preemptible: false,
-            output_base: "".to_string(),
-        }
+        ret
     }
 
     /// Returns information about the actual server process and its configuration.
-    pub fn process_info() {
-        // const ServerProcessInfo &process_info() const
-
-        unimplemented!();
-        // return process_info_
+    pub fn process_info(self) -> ServerProcessInfo {
+        self.process_info
     }
 
     /// Whether there is an active connection to a server.
-    fn connected() -> bool {
+    pub fn connected(&self) -> bool {
         // bool Connected() const
 
         unimplemented!();
@@ -358,7 +374,8 @@ impl BazelServer {
 
         info!(
             self.logger,
-            "Trying to connect to server (timeout: {} secs)...", self.connect_timeout_secs
+            "Trying to connect to server...";
+            "timeout" => format!("{:?}", self.connect_timeout),
         );
         //   grpc::Status status = client->Ping(&context, request, &response);
         //
@@ -377,7 +394,6 @@ impl BazelServer {
     fn connect() -> bool {
         // bool BazelServer::Connect() {
 
-        unimplemented!();
         //   assert(!Connected());
         //
         //   blaze_util::Path server_dir = output_base_.GetRelative("server");
@@ -432,6 +448,7 @@ impl BazelServer {
         //   this->client_ = std::move(client);
         //   process_info_.server_pid_ = server_pid;
         //   return true;
+        unimplemented!();
     }
 
     /// Cancellation works as follows:
@@ -600,34 +617,41 @@ impl BazelServer {
     /// Send the command line to the server and forward whatever it says to stdout
     /// and stderr. Returns the desired exit code. Only call this when the server
     /// is in connected state.
-    pub fn communicate() {
-        // unsigned int BazelServer::Communicate(
-        //     const string &command, const vector<string> &command_args,
-        //     const string &invocation_policy,
-        //     const vector<RcStartupFlag> &original_startup_options,
-        //     const LoggingInfo &logging_info,
-        //     const DurationMillis client_startup_duration,
-        //     const DurationMillis extract_data_duration,
-        //     const DurationMillis command_wait_duration_ms) {
+    pub fn communicate(
+        &self,
+        command: &str, //     const string &command,
+        command_args: Vec<&str>, //const vector<string> &command_args,
 
-        unimplemented!();
+                       //     const string &invocation_policy,
+                       //     const vector<RcStartupFlag> &original_startup_options,
+                       //     const LoggingInfo &logging_info,
+                       //     const DurationMillis client_startup_duration,
+                       //     const DurationMillis extract_data_duration,
+                       //     const DurationMillis command_wait_duration_ms
+    ) -> Result<(), ExitCode> {
+        // unsigned int BazelServer::Communicate(@@ARGS@@) {
+
         //   assert(Connected());
         //   assert(process_info_.server_pid_ > 0);
         //
         //   vector<string> arg_vector;
         //   if (!command.empty()) {
         //     arg_vector.push_back(command);
-        //     add_logging_args(logging_info, client_startup_duration, extract_data_duration,
-        //                    command_wait_duration_ms, &arg_vector);
+        //     add_logging_args(logging_info, client_startup_duration, extract_data_duration, command_wait_duration_ms, &arg_vector);
         //   }
         //
         //   arg_vector.insert(arg_vector.end(), command_args.begin(), command_args.end());
-        //
+
         //   command_server::RunRequest request;
-        //   request.set_cookie(request_cookie_);
+        let mut request = command_server_rust_proto::RunRequest::new();
+
+        // FIXME hardcode value from
+        request.set_cookie(String::from("e582cb9b207376291824f7729f212b")); //   request.set_cookie(request_cookie_);
+
         //   request.set_block_for_lock(block_for_lock_);
-        //   request.set_preemptible(preemptible_);
-        //   request.set_client_description("pid=" + blaze::GetProcessIdAsString());
+        request.set_preemptible(self.preemptible); //   request.set_preemptible(preemptible_);
+        request.set_client_description(format!("pid={}", std::process::id())); //   request.set_client_description("pid=" + blaze::GetProcessIdAsString());
+
         //   for (const string &arg : arg_vector) {
         //     request.add_arg(arg);
         //   }
@@ -636,32 +660,57 @@ impl BazelServer {
         //   }
         //
         //   for (const auto &startup_option : original_startup_options) {
-        //     command_server::StartupOption *proto_option_field =
-        //         request.add_startup_options();
+        //     command_server::StartupOption *proto_option_field = request.add_startup_options();
         //     request.add_startup_options();
         //     proto_option_field->set_source(startup_option.source);
         //     proto_option_field->set_option(startup_option.value);
         //   }
-        //
+
+        debug!(self.logger, "Built request"; "request" => format!("{:?}", request));
+
+        // FIXME the following was not part of the C++ code:
+
+        let port = 4242;
+        let client_conf = Default::default();
+
+        use crate::command_server_rust_proto::CommandServer;
+        use futures::executor;
+        use grpc::ClientStubExt;
+
+        let client =
+            command_server_rust_proto::CommandServerClient::new_plain("::1", port, client_conf)
+                .unwrap();
+
+        let response = client
+            .run(grpc::RequestOptions::new(), request)
+            .join_metadata_result();
+        // wait for response
+        debug!(self.logger, "Built request"; "request" => format!("{:?}", executor::block_on(response)));
+
+        // Now we are back in the existing C++ code
+
         //   std::unique_ptr<grpc::ClientContext> context(new grpc::ClientContext);
         //   command_server::RunResponse response;
-        //   std::unique_ptr<grpc::ClientReader<command_server::RunResponse>> reader(
-        //       client_->Run(context.get(), request));
-        //
+        //   std::unique_ptr<grpc::ClientReader<command_server::RunResponse>> reader(client_->Run(context.get(), request));
+
         //   // Release the server lock because the gRPC handles concurrent clients just
         //   // fine. Note that this may result in two "waiting for other client" messages
         //   // (one during server startup and one emitted by the server)
-        //   BAZEL_LOG(INFO)
-        //       << "Releasing client lock, let the server manage concurrent requests.";
+
+        info!(
+            self.logger,
+            "Releasing client lock, let the server manage concurrent requests."
+        );
+        //   BAZEL_LOG(INFO) << "Releasing client lock, let the server manage concurrent requests.";
         //   blaze::ReleaseLock(&blaze_lock_);
-        //
+
         //   std::thread cancel_thread(&BazelServer::CancelThread, this);
         //   bool command_id_set = false;
         //   bool pipe_broken = false;
         //   command_server::RunResponse final_response;
         //   bool finished = false;
         //   bool finished_warning_emitted = false;
-        //
+
         //   while (reader->Read(&response)) {
         //     if (finished && !finished_warning_emitted) {
         //       BAZEL_LOG(USER) << "\nServer returned messages after reporting exit code";
@@ -712,11 +761,11 @@ impl BazelServer {
         //       send_action(CancelThreadAction::COMMAND_ID_RECEIVED);
         //     }
         //   }
-        //
+
         //   grpc::Status status = reader->Finish();
         //   reader.reset();
         //   context.reset();  // necessary for destroying client_ below to be effective
-        //
+
         //   // If the server claims it is shutting down (eg the command was "shutdown"),
         //   // wait for it to exit.
         //   if (final_response.termination_expected()) {
@@ -729,10 +778,10 @@ impl BazelServer {
         //       KillServerProcess(process_info_.server_pid_, output_base_);
         //     }
         //   }
-        //
+
         //   send_action(CancelThreadAction::JOIN);
         //   cancel_thread.join();
-        //
+
         //   if (!status.ok()) {
         //     BAZEL_LOG(USER) << "\nServer terminated abruptly (error code: "
         //                     << status.error_code() << ", error message: '"
@@ -768,15 +817,16 @@ impl BazelServer {
         //     fflush(NULL);
         //     ExecuteRunRequest(blaze_util::Path(request.argv(0)), argv);
         //   }
-        //
+
         //   if (final_response.has_failure_detail()) {
         //     BAZEL_LOG(INFO) << "failure_detail: "
         //                     << final_response.failure_detail().DebugString();
         //   }
-        //
+
         //   // We'll exit with exit code SIGPIPE on Unixes due to PropagateSignalOnExit()
         //   return pipe_broken ? blaze_exit_code::LocalEnvironmentalError
         //                      : final_response.exit_code();
+        Err(ExitCode::InternalError) // FIXME implement the rest of the function
     }
 
     fn send_action() {
@@ -1720,72 +1770,90 @@ fn ensure_previous_server_process_terminated() {
 // }
 
 // static void CancelServer() { blaze_server->Cancel(); }
-//
-// // Runs the launcher in client/server mode. Ensures that there's indeed a
-// // running server, then forwards the user's command to the server and the
-// // server's response back to the user. Does not return - exits via exit or
-// // signal.
-// static ATTRIBUTE_NORETURN void RunClientServerMode(
-//     const blaze_util::Path &server_exe, const vector<string> &server_exe_args,
-//     const blaze_util::Path &server_dir, const WorkspaceLayout &workspace_layout,
-//     const string &workspace, const OptionProcessor &option_processor,
-//     const StartupOptions &startup_options, LoggingInfo *logging_info,
-//     const DurationMillis extract_data_duration,
-//     const DurationMillis command_wait_duration_ms, BazelServer *server) {
-//   while (true) {
-//     if (!server->Connected()) {
-//       StartServerAndConnect(server_exe, server_exe_args, server_dir,
-//                             workspace_layout, workspace, option_processor,
-//                             startup_options, logging_info, server);
-//     }
-//
-//     // Check for the case when the workspace directory deleted and then gets
-//     // recreated while the server is running.
-//
-//     std::unique_ptr<blaze_util::Path> server_cwd =
-//         GetProcessCWD(server->process_info().server_pid_);
-//     // If server_cwd is nullptr, GetProcessCWD failed. This notably occurs when
-//     // running under Docker because then readlink(/proc/[pid]/cwd) returns
-//     // EPERM.
-//     // Docker issue #6687 (https://github.com/docker/docker/issues/6687) fixed
-//     // this, but one still needs the --cap-add SYS_PTRACE command line flag, at
-//     // least according to the discussion on Docker issue #6800
-//     // (https://github.com/docker/docker/issues/6687), and even then, it's a
-//     // non-default Docker flag. Given that this occurs only in very weird
-//     // cases, it's better to assume that everything is alright if we can't get
-//     // the cwd.
-//
-//     if (server_cwd != nullptr &&
-//         (*server_cwd != blaze_util::Path(workspace) ||  // changed
-//          server_cwd->Contains(" (deleted)"))) {         // deleted.
-//       // There's a distant possibility that the two paths look the same yet are
-//       // actually different because the two processes have different mount
-//       // tables.
-//       BAZEL_LOG(INFO) << "Server's cwd moved or deleted ("
-//                       << server_cwd->AsPrintablePath() << ").";
-//       server->kill_running_server();
-//     } else {
-//       break;
-//     }
-//   }
-//
-//   BAZEL_LOG(INFO) << "Connected (server pid="
-//                   << server->process_info().server_pid_ << ").";
-//
-//   // Wall clock time since process startup.
-//   const DurationMillis client_startup_duration =
-//       (GetMillisecondsMonotonic() - logging_info->start_time_ms);
-//
-//   SignalHandler::Get().Install(startup_options.product_name,
-//                                startup_options.output_base,
-//                                &server->process_info(), CancelServer);
-//   SignalHandler::Get().PropagateSignalOrExit(server->Communicate(
-//       option_processor.GetCommand(), option_processor.GetCommandArguments(),
-//       startup_options.invocation_policy,
-//       startup_options.original_startup_options_, *logging_info,
-//       client_startup_duration, extract_data_duration,
-//       command_wait_duration_ms));
-// }
+
+/// Runs the launcher in client/server mode. Ensures that there's indeed a
+/// running server, then forwards the user's command to the server and the
+/// server's response back to the user. Does not return - exits via exit or
+/// signal.
+fn run_client_server_mode(
+    // FIXME dedup with LoggingInfo bellow
+    log: slog::Logger,
+
+    //     const blaze_util::Path &server_exe,
+    //const vector<string> &server_exe_args,
+    server_dir: &Path, // const blaze_util::Path &server_dir,
+
+    //const WorkspaceLayout &workspace_layout,
+    //     const string &workspace,
+    //const OptionProcessor &option_processor,
+    //     const StartupOptions &startup_options,
+    //LoggingInfo *logging_info,
+    //     const DurationMillis extract_data_duration,
+    //     const DurationMillis command_wait_duration_ms,
+    server: BazelServer, //BazelServer *server
+) -> Result<(), ExitCode> {
+    // static ATTRIBUTE_NORETURN void run_client_server_mode(@@ARGS@@) {
+
+    // let connected = server.connected();
+    // info!(log, "run_client_server_mode"; "server.Connected" => format!("{:?}", connected));
+
+    //   while (true) {
+    //     if (!server->Connected()) {
+    //       StartServerAndConnect(server_exe, server_exe_args, server_dir,
+    //                             workspace_layout, workspace, option_processor,
+    //                             startup_options, logging_info, server);
+    //     }
+    //
+    //     // Check for the case when the workspace directory deleted and then gets
+    //     // recreated while the server is running.
+    //
+    //     std::unique_ptr<blaze_util::Path> server_cwd =
+    //         GetProcessCWD(server->process_info().server_pid_);
+    //     // If server_cwd is nullptr, GetProcessCWD failed. This notably occurs when
+    //     // running under Docker because then readlink(/proc/[pid]/cwd) returns
+    //     // EPERM.
+    //     // Docker issue #6687 (https://github.com/docker/docker/issues/6687) fixed
+    //     // this, but one still needs the --cap-add SYS_PTRACE command line flag, at
+    //     // least according to the discussion on Docker issue #6800
+    //     // (https://github.com/docker/docker/issues/6687), and even then, it's a
+    //     // non-default Docker flag. Given that this occurs only in very weird
+    //     // cases, it's better to assume that everything is alright if we can't get
+    //     // the cwd.
+    //
+    //     if (server_cwd != nullptr &&
+    //         (*server_cwd != blaze_util::Path(workspace) ||  // changed
+    //          server_cwd->Contains(" (deleted)"))) {         // deleted.
+    //       // There's a distant possibility that the two paths look the same yet are
+    //       // actually different because the two processes have different mount
+    //       // tables.
+    //       BAZEL_LOG(INFO) << "Server's cwd moved or deleted ("
+    //                       << server_cwd->AsPrintablePath() << ").";
+    //       server->kill_running_server();
+    //     } else {
+    //       break;
+    //     }
+    //   }
+
+    info!(log, "Connected"; "server pid" => format!("{:?}", server.process_info.server_pid));
+    //   BAZEL_LOG(INFO) << "Connected (server pid=" << server->process_info().server_pid_ << ").";
+
+    //   // Wall clock time since process startup.
+    //   const DurationMillis client_startup_duration = (GetMillisecondsMonotonic() - logging_info->start_time_ms);
+
+    //   SignalHandler::Get().Install(startup_options.product_name, startup_options.output_base, &server->process_info(), CancelServer);
+
+    //   SignalHandler::Get().PropagateSignalOrExit(server->Communicate(
+    server.communicate(
+        "version", //       option_processor.GetCommand(),
+        Vec::<&str>::new(), //option_processor.GetCommandArguments(),
+                   //       startup_options.invocation_policy,
+                   //       startup_options.original_startup_options_,
+                   //*logging_info,
+                   //       client_startup_duration,
+                   //extract_data_duration,
+                   //       command_wait_duration_ms
+    )
+}
 
 // // Parse the options.
 // static void ParseOptionsOrDie(const string &cwd, const string &workspace,
@@ -1794,7 +1862,7 @@ fn ensure_previous_server_process_terminated() {
 //   std::string error;
 //   std::vector<std::string> args(argv, argv + argc);
 //   const blaze_exit_code::ExitCode parse_exit_code =
-//       option_processor.ParseOptions(args, workspace, cwd, &error);
+//       option_processor.parse_options(args, workspace, cwd, &error);
 //
 //   if (parse_exit_code != blaze_exit_code::SUCCESS) {
 //     option_processor.PrintStartupOptionsProvenanceMessage();
@@ -1999,8 +2067,8 @@ fn print_version_info(self_path: &str, product_name: &str) {
 fn run_launcher(
     log: slog::Logger,
     self_path: String,
-    archive_contents: Vec<String>,
-    install_md5: String,
+    //archive_contents: Vec<String>,
+    //install_md5: String,
     startup_options: StartupOptions,
     option_processor: OptionProcessor,
     workspace: String,
@@ -2009,20 +2077,17 @@ fn run_launcher(
     info!(log, "run_launcher");
 
     //   blaze_server = new BazelServer(startup_options);
-    let blaze_server = BazelServer::new(
-        log.new(o!("component" => "bazel-server")),
-        // startup_options,
-    );
+    let server = BazelServer::new(log.new(o!("component" => "bazel-server")), startup_options);
 
     //   const DurationMillis command_wait_duration_ms(blaze_server->acquire_lock());
-    let command_wait = blaze_server.acquire_lock();
+    //let command_wait = srv.acquire_lock();
 
     //   BAZEL_LOG(INFO) << "Acquired the client lock, waited "
     //                   << command_wait_duration_ms.millis << " milliseconds";
-    info!(log,
-        "Acquired the client lock, waited command_wait_duration_ms.millis milliseconds";
-        "wait_duration" => format!("{:?}", command_wait),
-    );
+    // info!(log,
+    //     "Acquired the client lock, waited command_wait_duration_ms.millis milliseconds";
+    //     "wait_duration" => format!("{:?}", command_wait),
+    // );
 
     //   WarnFilesystemType(startup_options.output_base);
 
@@ -2069,74 +2134,87 @@ fn run_launcher(
     //   server_exe_args[0] = server_exe.AsNativePath();
     // #endif
 
-    //   if (KillRunningServerIfDifferentStartupOptions(
-    //           startup_options, server_exe_args, logging_info, blaze_server) &&
-    //       "shutdown" == option_processor.GetCommand()) {
+    //   if (KillRunningServerIfDifferentStartupOptions(startup_options, server_exe_args, logging_info, blaze_server) && "shutdown" == option_processor.GetCommand()) {
     //     return;
     //   }
 
     //   const blaze_util::Path server_dir = blaze_util::Path(startup_options.output_base).GetRelative("server");
+    // FIXME this is not portable
+    let server_dir_temp_ = format!(
+        "/var/tmp/_bazel_{}/7de1337cfe696bc36a0917812baa56e7/server",
+        whoami::username()
+    );
+    let server_dir = Path::new(server_dir_temp_.as_str());
+
     //   if (is_server_mode(option_processor.GetCommand())) {
-    //     run_server_mode(server_exe, server_exe_args, server_dir, workspace_layout,
-    //                   workspace, option_processor, startup_options, blaze_server);
+    //     run_server_mode(server_exe, server_exe_args, server_dir, workspace_layout, workspace, option_processor, startup_options, blaze_server);
     //   } else if (startup_options.batch) {
-    //     run_batch_mode(server_exe, server_exe_args, workspace_layout, workspace,
-    //                  option_processor, startup_options, logging_info,
-    //                  extract_data_duration, command_wait_duration_ms, blaze_server);
+    //     run_batch_mode(server_exe, server_exe_args, workspace_layout, workspace, option_processor, startup_options, logging_info, extract_data_duration, command_wait_duration_ms, blaze_server);
     //   } else {
-    //     RunClientServerMode(server_exe, server_exe_args, server_dir,
-    //                         workspace_layout, workspace, option_processor,
-    //                         startup_options, logging_info, extract_data_duration,
-    //                         command_wait_duration_ms, blaze_server);
+    //     run_client_server_mode(server_exe, server_exe_args, server_dir, workspace_layout, workspace, option_processor, startup_options, logging_info, extract_data_duration, command_wait_duration_ms, blaze_server);
+    run_client_server_mode(
+        log, // server_exe,
+        //server_exe_args,
+        server_dir,
+        // workspace_layout,
+        //workspace,
+        //option_processor,
+        //startup_options,
+        //logging_info,
+        //extract_data_duration,
+        //command_wait_duration_ms,
+        server,
+    )
     //   }
 
-    // FIXME fake
-
-    let cwd = std::env::current_dir().unwrap();
-    let w = match workspace_layout::find_workspace(cwd.to_str().unwrap()) {
-        Ok(w) => w,
-        Err(e) => {
-            error!(log, "get_workspace"; "error" => format!("{:#?}", e));
-            return Err(exit_code::ExitCode::InternalError);
-        }
-    };
-    info!(log, "get_workspace"; "dir" => format!("{:#?}", w));
-
-    let pretty_name = workspace_layout::pretty_workspace_name(w);
-    info!(log, "pretty_workspace_name"; "name" => format!("{:#?}", pretty_name));
-
-    let p = dirs::home_dir().unwrap().join(".bazelrc");
-    let filename = p.to_str().unwrap();
-
-    let rc = match rc_file::RcFile::new(
-        log.new(o!("component" => "rc_parser")),
-        filename,
-        "dummy-workspace",
-    ) {
-        Ok(rc) => rc,
-        Err(e) => {
-            error!(log, "{:#?}", e);
-            return Err(exit_code::ExitCode::InternalError);
-        }
-    };
-    info!(log, "success"; "rc" => format!("{:#?}", rc));
-
-    // FIXME end fake
-
-    // FIXME GRPC Stub demo
-
-    let mut run_req = command_server_rust_proto::RunRequest::new();
-    run_req.set_cookie("this-is-the-cookie-value".to_string());
-    run_req.set_client_description("bazel-rs".to_string());
-    run_req.set_arg(protobuf::RepeatedField::from(vec![
-        Vec::<u8>::from("build"),
-        Vec::<u8>::from("//src:bazel-rs"),
-    ]));
-    info!(log, "grpc stub demo"; "run_req" => format!("{:?}", run_req));
-
-    // FIXME end GRPC Stub demo
-
-    Ok(())
+    // if false {
+    //
+    //     // FIXME fake
+    //
+    //     let cwd = std::env::current_dir().unwrap();
+    //     let w = match workspace_layout::find_workspace(cwd.to_str().unwrap()) {
+    //         Ok(w) => w,
+    //         Err(e) => {
+    //             error!(log, "get_workspace"; "error" => format!("{:#?}", e));
+    //             return Err(exit_code::ExitCode::InternalError);
+    //         }
+    //     };
+    //     info!(log, "get_workspace"; "dir" => format!("{:#?}", w));
+    //
+    //     let pretty_name = workspace_layout::pretty_workspace_name(w);
+    //     info!(log, "pretty_workspace_name"; "name" => format!("{:#?}", pretty_name));
+    //
+    //     let p = dirs::home_dir().unwrap().join(".bazelrc");
+    //     let filename = p.to_str().unwrap();
+    //
+    //     let rc = match rc_file::RcFile::new(
+    //         log.new(o!("component" => "rc_parser")),
+    //         filename,
+    //         "dummy-workspace",
+    //     ) {
+    //         Ok(rc) => rc,
+    //         Err(e) => {
+    //             error!(log, "{:#?}", e);
+    //             return Err(exit_code::ExitCode::InternalError);
+    //         }
+    //     };
+    //     info!(log, "success"; "rc" => format!("{:#?}", rc));
+    //
+    //     // FIXME end fake
+    //
+    //     // FIXME GRPC Stub demo
+    //
+    //     let mut run_req = command_server_rust_proto::RunRequest::new();
+    //     run_req.set_cookie("this-is-the-cookie-value".to_string());
+    //     run_req.set_client_description("bazel-rs".to_string());
+    //     run_req.set_arg(protobuf::RepeatedField::from(vec![
+    //         Vec::<u8>::from("build"),
+    //         Vec::<u8>::from("//src:bazel-rs"),
+    //     ]));
+    //     info!(log, "grpc stub demo"; "run_req" => format!("{:?}", run_req));
+    //
+    //     // FIXME end GRPC Stub demo
+    // }
 }
 
 fn logger() -> slog::Logger {
@@ -2172,7 +2250,6 @@ pub fn main(
         check_and_get_binary_path(cwd.to_str().unwrap(), &args[0]),
         start_time,
     );
-    info!(log, "main"; "logging_info" => format!("{:?}", logging_info)); // FIXME remove
 
     //   blaze::SetupStdStreams();
     //   if (argc == 1 && blaze::WarnIfStartedFromDesktop()) {
@@ -2198,12 +2275,17 @@ pub fn main(
 
     //   const string workspace = workspace_layout->GetWorkspace(cwd);
     // FIXME
-    let workspace = String::from("FIXME");
+    let workspace = workspace_layout::find_workspace(cwd.to_str().unwrap())
+        .unwrap()
+        .to_string();
+    info!(log, "Found workspace"; "workspace" => format!("{:?}", workspace));
 
     //   ParseOptionsOrDie(cwd, workspace, *option_processor, argc, argv);
+    option_processor.parse_options().unwrap();
 
-    let startup_options = StartupOptions::default();
     //   StartupOptions *startup_options = option_processor->GetParsedStartupOptions();
+    let startup_options = option_processor.startup_options().unwrap();
+
     //   startup_options->MaybeLogStartupOptionWarnings();
 
     //   SetDebugLog(startup_options->client_debug);
@@ -2225,16 +2307,16 @@ pub fn main(
     //     startup_options->batch = true;
     //   }
 
-    let (archive_contents, install_md5) =
-        archive_utils::determine_archive_contents(self_path.to_str().unwrap()).unwrap();
+    // let (archive_contents, install_md5) =
+    //     archive_utils::determine_archive_contents(self_path.to_str().unwrap()).unwrap();
 
     // UpdateConfiguration(install_md5, workspace, is_server_mode(option_processor->GetCommand()), startup_options);
 
     match run_launcher(
         log,
         self_path.to_str().unwrap().to_owned(),
-        archive_contents,
-        install_md5,
+        //archive_contents,
+        //install_md5,
         startup_options,
         option_processor,
         workspace,
