@@ -92,9 +92,7 @@ use std::path::Path;
 extern crate dirs;
 extern crate protobuf;
 extern crate slog;
-use slog::{debug, info, o, Drain};
-extern crate slog_async;
-extern crate slog_term;
+use slog::{debug, error, info, o};
 extern crate whoami; // FIXME remove this unrelated crate
 extern crate zip;
 
@@ -668,27 +666,6 @@ impl BazelServer {
 
         debug!(self.logger, "Built request"; "request" => format!("{:?}", request));
 
-        // FIXME the following was not part of the C++ code:
-
-        let port = 4242;
-        let client_conf = Default::default();
-
-        use crate::command_server_rust_proto::CommandServer;
-        use futures::executor;
-        use grpc::ClientStubExt;
-
-        let client =
-            command_server_rust_proto::CommandServerClient::new_plain("::1", port, client_conf)
-                .unwrap();
-
-        let response = client
-            .run(grpc::RequestOptions::new(), request)
-            .join_metadata_result();
-        // wait for response
-        debug!(self.logger, "Built request"; "request" => format!("{:?}", executor::block_on(response)));
-
-        // Now we are back in the existing C++ code
-
         //   std::unique_ptr<grpc::ClientContext> context(new grpc::ClientContext);
         //   command_server::RunResponse response;
         //   std::unique_ptr<grpc::ClientReader<command_server::RunResponse>> reader(client_->Run(context.get(), request));
@@ -1237,7 +1214,7 @@ fn run_batch_mode() {
     //   BAZEL_LOG(INFO) << "Starting " << startup_options.product_name
     //                   << " in batch mode.";
     //
-    //   const string command = option_processor.GetCommand();
+    //   const string command = option_processor.get_command();
     //   const vector<string> command_arguments =
     //       option_processor.GetCommandArguments();
     //
@@ -1362,7 +1339,7 @@ fn connect_or_die() {
     //
     //     std::this_thread::sleep_until(next_attempt_time);
     //     if (!server_startup->IsStillAlive()) {
-    //       option_processor.PrintStartupOptionsProvenanceMessage();
+    //       option_processor.print_startup_options_provenance_message();
     //       if (server->process_info().jvm_log_file_append_) {
     //         // Don't dump the log if we were appending - the user should know where
     //         // to find it, and who knows how much content they may have accumulated.
@@ -1844,7 +1821,7 @@ fn run_client_server_mode(
 
     //   SignalHandler::Get().PropagateSignalOrExit(server->Communicate(
     server.communicate(
-        "version", //       option_processor.GetCommand(),
+        "version", //       option_processor.get_command(),
         Vec::<&str>::new(), //option_processor.GetCommandArguments(),
                    //       startup_options.invocation_policy,
                    //       startup_options.original_startup_options_,
@@ -1854,21 +1831,6 @@ fn run_client_server_mode(
                    //       command_wait_duration_ms
     )
 }
-
-// // Parse the options.
-// static void ParseOptionsOrDie(const string &cwd, const string &workspace,
-//                               OptionProcessor &option_processor, int argc,
-//                               const char *const *argv) {
-//   std::string error;
-//   std::vector<std::string> args(argv, argv + argc);
-//   const blaze_exit_code::ExitCode parse_exit_code =
-//       option_processor.parse_options(args, workspace, cwd, &error);
-//
-//   if (parse_exit_code != blaze_exit_code::SUCCESS) {
-//     option_processor.PrintStartupOptionsProvenanceMessage();
-//     BAZEL_DIE(parse_exit_code) << error;
-//   }
-// }
 
 // // Updates the parsed startup options and global config to fill in defaults.
 // static void UpdateConfiguration(const string &install_md5,
@@ -2096,7 +2058,7 @@ fn run_launcher(
 
     //   blaze_server->Connect();
 
-    //   if (!startup_options.batch && "shutdown" == option_processor.GetCommand() &&
+    //   if (!startup_options.batch && "shutdown" == option_processor.get_command() &&
     //       !blaze_server->Connected()) {
     //     // TODO(b/134525510): Connected() can return false when the server process
     //     // is alive but unresponsive, so bailing early here might not always be the
@@ -2134,7 +2096,7 @@ fn run_launcher(
     //   server_exe_args[0] = server_exe.AsNativePath();
     // #endif
 
-    //   if (KillRunningServerIfDifferentStartupOptions(startup_options, server_exe_args, logging_info, blaze_server) && "shutdown" == option_processor.GetCommand()) {
+    //   if (KillRunningServerIfDifferentStartupOptions(startup_options, server_exe_args, logging_info, blaze_server) && "shutdown" == option_processor.get_command()) {
     //     return;
     //   }
 
@@ -2146,7 +2108,7 @@ fn run_launcher(
     );
     let server_dir = Path::new(server_dir_temp_.as_str());
 
-    //   if (is_server_mode(option_processor.GetCommand())) {
+    //   if (is_server_mode(option_processor.get_command())) {
     //     run_server_mode(server_exe, server_exe_args, server_dir, workspace_layout, workspace, option_processor, startup_options, blaze_server);
     //   } else if (startup_options.batch) {
     //     run_batch_mode(server_exe, server_exe_args, workspace_layout, workspace, option_processor, startup_options, logging_info, extract_data_duration, command_wait_duration_ms, blaze_server);
@@ -2217,20 +2179,14 @@ fn run_launcher(
     // }
 }
 
-fn logger() -> slog::Logger {
-    let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain).build().fuse();
-    slog::Logger::root(drain, o!())
-}
-
 pub fn main(
+    log: slog::Logger,
     args: Vec<String>,
-    option_processor: OptionProcessor,
+    mut option_processor: OptionProcessor,
     start_time: std::time::SystemTime,
 ) -> exit_code::ExitCode {
     // Logging must be set first to assure no log statements are missed.
-    let log = logger();
+    // let log = logger();
 
     // const string self_path = GetSelfPath(argv[0]);
     let self_path = std::env::current_exe().unwrap();
@@ -2280,11 +2236,17 @@ pub fn main(
         .to_string();
     info!(log, "Found workspace"; "workspace" => format!("{:?}", workspace));
 
-    //   ParseOptionsOrDie(cwd, workspace, *option_processor, argc, argv);
-    option_processor.parse_options().unwrap();
+    match option_processor.parse_options(args, &workspace, cwd.to_str().unwrap()) {
+        Ok(_) => {}
+        Err(e) => {
+            option_processor.print_startup_options_provenance_message();
+            error!(log, "{}", e.reason());
+            return e.code();
+        }
+    };
 
-    //   StartupOptions *startup_options = option_processor->GetParsedStartupOptions();
-    let startup_options = option_processor.startup_options().unwrap();
+    //   StartupOptions *startup_options = option_processor->get_parsed_startup_options();
+    let startup_options = option_processor.get_parsed_startup_options();
 
     //   startup_options->MaybeLogStartupOptionWarnings();
 
@@ -2310,7 +2272,7 @@ pub fn main(
     // let (archive_contents, install_md5) =
     //     archive_utils::determine_archive_contents(self_path.to_str().unwrap()).unwrap();
 
-    // UpdateConfiguration(install_md5, workspace, is_server_mode(option_processor->GetCommand()), startup_options);
+    // UpdateConfiguration(install_md5, workspace, is_server_mode(option_processor->get_command()), startup_options);
 
     match run_launcher(
         log,

@@ -3,6 +3,7 @@
 /// Must be kept in sync with the Java counterpart under
 /// com/google/devtools/build/lib/util/ExitCode.java
 
+#[derive(Copy, Clone, Debug)]
 pub enum ExitCode {
     // Success.
     Success = 0,
@@ -28,6 +29,7 @@ pub enum ExitCode {
     InternalError = 37,
 }
 
+#[derive(Debug)]
 pub struct Error {
     exit_code: ExitCode,
     reason: String,
@@ -36,5 +38,13 @@ pub struct Error {
 impl Error {
     pub fn new(exit_code: ExitCode, reason: String) -> Self {
         Self { exit_code, reason }
+    }
+
+    pub fn code(&self) -> ExitCode {
+        self.exit_code
+    }
+
+    pub fn reason(&self) -> String {
+        self.reason.to_owned()
     }
 }

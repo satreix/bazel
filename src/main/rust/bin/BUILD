@@ -5,6 +5,9 @@ rust_binary(
     srcs = ["bazel.rs"],
     visibility = ["//src:__pkg__"],
     deps = [
+        "//cargo:slog",
+        "//cargo:slog_async",
+        "//cargo:slog_term",
         "//src/main/rust:bazel",
     ],
 )

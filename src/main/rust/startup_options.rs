@@ -55,6 +55,7 @@ impl RcStartupFlag {
 }
 
 /// The source of truth for the server javabase.
+#[derive(Clone)]
 enum JavabaseType {
     Unknown,
     /// An explicit --server_javabase startup option.
@@ -123,6 +124,7 @@ pub trait StartupOptionsTrait {
 /// TODO(bazel-team): The encapsulation is not quite right -- there are some
 /// places in blaze.cc where some of these fields are explicitly modified. Their
 /// names also don't conform to the style guide.
+#[derive(Clone)]
 pub struct StartupOptions {
     //  public:
     //   virtual ~StartupOptions();
@@ -349,14 +351,12 @@ pub struct StartupOptions {
     //
     //   // Same as RegisterNullaryStartupFlag, but these flags are forbidden in
     //   // .bazelrc files.
-    //   void RegisterNullaryStartupFlagNoRc(const std::string &flag_name,
-    //                                       bool *value);
+    //   void RegisterNullaryStartupFlagNoRc(const std::string &flag_name, bool *value);
     //
     //   void RegisterSpecialNullaryStartupFlag(const std::string &flag_name, SpecialNullaryFlagHandler handler);
     //
     //   // Override the flag name to use in the 'option_sources' map.
-    //   void OverrideOptionSourcesKey(const std::string &flag_name,
-    //                                 const std::string &new_name);
+    //   void OverrideOptionSourcesKey(const std::string &flag_name, const std::string &new_name);
 
     //  private:
     //   // Parses a single argument, either from the command line or from the .blazerc

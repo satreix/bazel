@@ -9,15 +9,16 @@
 // #include "src/main/cpp/util/exit_code.h"
 
 use crate::exit_code::{self, ExitCode};
-use crate::rc_file::{ParseError, RcFile};
+use crate::rc_file::RcFile;
 use crate::StartupOptions;
+use slog::o;
 use std::collections::HashSet;
 
 /// Broken down structure of the command line into logical components. The raw
 /// arguments should not be referenced after this structure exists. This
 /// breakdown should suffice to access the parts of the command line that the
 /// client cares about, notably the binary and startup startup options.
-struct CommandLine {
+pub struct CommandLine {
     path_to_binary: String,
     startup_args: Vec<String>,
     command: String,
@@ -46,51 +47,22 @@ impl CommandLine {
 pub struct OptionProcessor {
     logger: slog::Logger,
 
-    //
-    //   // Splits the arguments of a command line invocation.
-    //   //
-    //   // For instance:
-    //   // output/bazel --foo --bar=42 --bar blah build --myflag value :mytarget
-    //   //
-    //   // returns a CommandLine structure with the following values:
-    //   // result.path_to_binary = "output/bazel"
-    //   // result.startup_args = {"--foo", "--bar=42", "--bar=blah"}
-    //   // result.command = "build"
-    //   // result.command_args = {"--myflag", "value", ":mytarget"}
-    //   //
-    //   // Note that result.startup_args is guaranteed to contain only valid
-    //   // startup options (w.r.t. StartupOptions::IsUnary and
-    //   // StartupOptions::IsNullary) and unary startup args of the form '--bar blah'
-    //   // are rewritten as '--bar=blah' for uniformity.
-    //   // In turn, the command and command args are not rewritten nor validated.
-    //   //
-    //   // If the method fails then error will contain the cause, otherwise error
-    //   // remains untouched.
-    //   virtual std::unique_ptr<CommandLine> SplitCommandLine(
-    //       std::vector<std::string> args, std::string* error) const;
-    //
     //   // Parse a command line and the appropriate blazerc files and stores the
     //   // results. This should be invoked only once per OptionProcessor object.
     //   blaze_exit_code::ExitCode parse_options(const std::vector<std::string>& args, const std::string& workspace, const std::string& cwd, std::string* error);
     //
     //   // Get the Blaze command to be executed.
     //   // Returns an empty string if no command was found on the command line.
-    //   std::string GetCommand() const;
-    //
-    //   // Gets the arguments to the command. This is put together from the default
-    //   // options specified in the blazerc file(s), the command line, and various
-    //   // bits and pieces of information about the environment the blaze binary is
-    //   // executed in.
-    //   std::vector<std::string> get_command_arguments() const;
+    //   std::string get_command() const;
     //
     //   // Returns the underlying StartupOptions object with parsed values. Must
     //   // only be called after parse_options.
-    //   virtual StartupOptions* GetParsedStartupOptions() const;
+    //   virtual StartupOptions* get_parsed_startup_options() const;
     //
     //   // Prints a message about the origin of startup options. This should be called
     //   // if the server is not started or called, in case the options are related to
     //   // the failure. Otherwise, the server will handle any required logging.
-    //   void PrintStartupOptionsProvenanceMessage() const;
+    //   void print_startup_options_provenance_message() const;
     //
     //   // Constructs all synthetic command args that should be passed to the
     //   // server to configure blazerc options and client environment.
@@ -211,91 +183,106 @@ impl OptionProcessor {
         self.startup_options.lowercase_product_name()
     }
 
-    // std::unique_ptr<CommandLine> OptionProcessor::SplitCommandLine(
-    //     vector<string> args, string* error) const {
-    //   const string lowercase_product_name = get_lowercase_product_name();
-    //
-    //   if (args.empty()) {
-    //     blaze_util::StringPrintf(error,
-    //                              "Unable to split command line, args is empty");
-    //     return nullptr;
-    //   }
-    //
-    //   string& path_to_binary = args[0];
-    //
-    //   // Process the startup options.
-    //   vector<string> startup_args;
-    //   vector<string>::size_type i = 1;
-    //   while (i < args.size() && IsArg(args[i])) {
-    //     string& current_arg = args[i];
-    //
-    //     bool is_nullary;
-    //     if (!startup_options_->MaybeCheckValidNullary(current_arg, &is_nullary,
-    //                                                   error)) {
-    //       return nullptr;
-    //     }
-    //
-    //     // If the current argument is a valid nullary startup option such as
-    //     // --master_bazelrc or --nomaster_bazelrc proceed to examine the next
-    //     // argument.
-    //     if (is_nullary) {
-    //       startup_args.push_back(current_arg);
-    //       i++;
-    //     } else if (startup_options_->IsUnary(current_arg)) {
-    //       // If the current argument is a valid unary startup option such as
-    //       // --bazelrc there are two cases to consider.
-    //
-    //       // The option is of the form '--bazelrc=value', hence proceed to
-    //       // examine the next argument.
-    //       if (current_arg.find('=') != string::npos) {
-    //         startup_args.push_back(std::move(current_arg));
-    //         i++;
-    //       } else {
-    //         // Otherwise, the option is of the form '--bazelrc value', hence
-    //         // skip the next argument and proceed to examine the argument located
-    //         // two places after.
-    //         if (i + 1 >= args.size()) {
-    //           blaze_util::StringPrintf(
-    //               error,
-    //               "Startup option '%s' expects a value.\n"
-    //               "Usage: '%s=somevalue' or '%s somevalue'.\n"
-    //               "  For more info, run '%s help startup_options'.",
-    //               current_arg.c_str(), current_arg.c_str(), current_arg.c_str(),
-    //               lowercase_product_name.c_str());
-    //           return nullptr;
-    //         }
-    //         // In this case we transform it to the form '--bazelrc=value'.
-    //         startup_args.push_back(std::move(current_arg) + "=" +
-    //                                std::move(args[i + 1]));
-    //         i += 2;
-    //       }
-    //     } else {
-    //       // If the current argument is not a valid unary or nullary startup option
-    //       // then fail.
-    //       blaze_util::StringPrintf(
-    //           error,
-    //           "Unknown startup option: '%s'.\n"
-    //           "  For more info, run '%s help startup_options'.",
-    //           current_arg.c_str(), lowercase_product_name.c_str());
-    //       return nullptr;
-    //     }
-    //   }
-    //
-    //   // The command is the arg right after the startup options.
-    //   if (i == args.size()) {
-    //     return std::unique_ptr<CommandLine>(new CommandLine(
-    //         std::move(path_to_binary), std::move(startup_args), "", {}));
-    //   }
-    //   string& command = args[i];
-    //
-    //   // The rest are the command arguments.
-    //   vector<string> command_args(std::make_move_iterator(args.begin() + i + 1),
-    //                               std::make_move_iterator(args.end()));
-    //
-    //   return std::unique_ptr<CommandLine>(
-    //       new CommandLine(std::move(path_to_binary), std::move(startup_args),
-    //                       std::move(command), std::move(command_args)));
-    // }
+    /// Splits the arguments of a command line invocation.
+    ///
+    /// For instance:
+    /// output/bazel --foo --bar=42 --bar blah build --myflag value :mytarget
+    ///
+    /// returns a CommandLine structure with the following values:
+    /// result.path_to_binary = "output/bazel"
+    /// result.startup_args = {"--foo", "--bar=42", "--bar=blah"}
+    /// result.command = "build"
+    /// result.command_args = {"--myflag", "value", ":mytarget"}
+    ///
+    /// Note that result.startup_args is guaranteed to contain only valid
+    /// startup options (w.r.t. StartupOptions::IsUnary and
+    /// StartupOptions::IsNullary) and unary startup args of the form '--bar blah'
+    /// are rewritten as '--bar=blah' for uniformity.
+    /// In turn, the command and command args are not rewritten nor validated.
+    ///
+    /// If the method fails then error will contain the cause, otherwise error
+    /// remains untouched.
+    pub fn split_command_line(&self) -> Result<CommandLine, String> {
+        //   const string lowercase_product_name = get_lowercase_product_name();
+        //
+        //   if (args.empty()) {
+        //     blaze_util::StringPrintf(error, "Unable to split command line, args is empty");
+        //     return nullptr;
+        //   }
+        //
+        //   string& path_to_binary = args[0];
+        //
+        //   // Process the startup options.
+        //   vector<string> startup_args;
+        //   vector<string>::size_type i = 1;
+        //   while (i < args.size() && IsArg(args[i])) {
+        //     string& current_arg = args[i];
+        //
+        //     bool is_nullary;
+        //     if (!startup_options_->MaybeCheckValidNullary(current_arg, &is_nullary, error)) {
+        //       return nullptr;
+        //     }
+        //
+        //     // If the current argument is a valid nullary startup option such as
+        //     // --master_bazelrc or --nomaster_bazelrc proceed to examine the next
+        //     // argument.
+        //     if (is_nullary) {
+        //       startup_args.push_back(current_arg);
+        //       i++;
+        //     } else if (startup_options_->IsUnary(current_arg)) {
+        //       // If the current argument is a valid unary startup option such as
+        //       // --bazelrc there are two cases to consider.
+        //
+        //       // The option is of the form '--bazelrc=value', hence proceed to
+        //       // examine the next argument.
+        //       if (current_arg.find('=') != string::npos) {
+        //         startup_args.push_back(std::move(current_arg));
+        //         i++;
+        //       } else {
+        //         // Otherwise, the option is of the form '--bazelrc value', hence
+        //         // skip the next argument and proceed to examine the argument located
+        //         // two places after.
+        //         if (i + 1 >= args.size()) {
+        //           blaze_util::StringPrintf(
+        //               error,
+        //               "Startup option '%s' expects a value.\n"
+        //               "Usage: '%s=somevalue' or '%s somevalue'.\n"
+        //               "  For more info, run '%s help startup_options'.",
+        //               current_arg.c_str(), current_arg.c_str(), current_arg.c_str(),
+        //               lowercase_product_name.c_str());
+        //           return nullptr;
+        //         }
+        //         // In this case we transform it to the form '--bazelrc=value'.
+        //         startup_args.push_back(std::move(current_arg) + "=" +
+        //                                std::move(args[i + 1]));
+        //         i += 2;
+        //       }
+        //     } else {
+        //       // If the current argument is not a valid unary or nullary startup option
+        //       // then fail.
+        //       blaze_util::StringPrintf(
+        //           error,
+        //           "Unknown startup option: '%s'.\n"
+        //           "  For more info, run '%s help startup_options'.",
+        //           current_arg.c_str(), lowercase_product_name.c_str());
+        //       return nullptr;
+        //     }
+        //   }
+        //
+        //   // The command is the arg right after the startup options.
+        //   if (i == args.size()) {
+        //     return std::unique_ptr<CommandLine>(new CommandLine(
+        //         std::move(path_to_binary), std::move(startup_args), "", {}));
+        //   }
+        //   string& command = args[i];
+        //
+        //   // The rest are the command arguments.
+        //   vector<string> command_args(std::make_move_iterator(args.begin() + i + 1),
+        //                               std::make_move_iterator(args.end()));
+        //
+        //   return std::unique_ptr<CommandLine>(new CommandLine(std::move(path_to_binary), std::move(startup_args), std::move(command), std::move(command_args)));
+        unimplemented!()
+    }
 
     // // TODO(#4502) Consider simplifying result_rc_files to a vector of RcFiles, no
     // // unique_ptrs.
@@ -378,7 +365,7 @@ impl OptionProcessor {
             //   for (const std::string& top_level_bazelrc_path : rc_files) {
 
             let parsed_rc = RcFile::new(
-                log.new(o!("component" => "rc_parser")),
+                self.logger.new(o!("component" => "rc_parser")),
                 top_level_bazelrc_path.as_str(),
                 workspace,
             )
@@ -389,7 +376,7 @@ impl OptionProcessor {
             //     internal::WarnAboutDuplicateRcFiles(read_files_canonical_paths, sources);
             //     read_files_canonical_paths.insert(sources.begin(), sources.end());
 
-             result_rc_files.push(parsed_rc);
+            result_rc_files.push(parsed_rc);
         }
 
         //   // Provide a warning for any old file that might have been missed with the new
@@ -426,10 +413,10 @@ impl OptionProcessor {
         assert!(!self.parse_options_called);
         self.parse_options_called = true;
 
-        //   cmd_line_ = SplitCommandLine(args, error);
-        //   if (cmd_line_ == nullptr) {
-        //     return blaze_exit_code::BAD_ARGV;
-        //   }
+        let cmd_line = match self.split_command_line() {
+            Ok(x) => x,
+            Err(e) => return Err(exit_code::Error::new(exit_code::ExitCode::BadArgv, e)),
+        };
 
         //   // Read the rc files, unless --ignore_all_rc_files was provided on the command
         //   // line. This depends on the startup options in argv since these may contain
@@ -468,33 +455,34 @@ impl OptionProcessor {
     //   }
     // }
 
-    // void OptionProcessor::PrintStartupOptionsProvenanceMessage() const {
-    //   StartupOptions* parsed_startup_options = GetParsedStartupOptions();
-    //
-    //   // Print the startup flags in the order they are parsed, to keep the
-    //   // precedence clear. In order to minimize the number of lines of output in
-    //   // the terminal, group sequential flags by origin. Note that an rc file may
-    //   // turn up multiple times in this list, if, for example, it imports another
-    //   // rc file and contains startup options on either side of the import
-    //   // statement. This is done intentionally to make option priority clear.
-    //   std::string command_line_source;
-    //   std::string& most_recent_blazerc = command_line_source;
-    //   std::vector<std::string> accumulated_options;
-    //   for (const auto& flag : parsed_startup_options->original_startup_options_) {
-    //     if (flag.source == most_recent_blazerc) {
-    //       accumulated_options.push_back(flag.value);
-    //     } else {
-    //       PrintStartupOptions(most_recent_blazerc, accumulated_options);
-    //       // Start accumulating again.
-    //       accumulated_options.clear();
-    //       accumulated_options.push_back(flag.value);
-    //       most_recent_blazerc = flag.source;
-    //     }
-    //   }
-    //   // Don't forget to print out the last ones.
-    //   PrintStartupOptions(most_recent_blazerc, accumulated_options);
-    // }
-    //
+    pub fn print_startup_options_provenance_message(&self) {
+        // void OptionProcessor::print_startup_options_provenance_message() const {
+        //   StartupOptions* parsed_startup_options = get_parsed_startup_options();
+        //
+        //   // Print the startup flags in the order they are parsed, to keep the
+        //   // precedence clear. In order to minimize the number of lines of output in
+        //   // the terminal, group sequential flags by origin. Note that an rc file may
+        //   // turn up multiple times in this list, if, for example, it imports another
+        //   // rc file and contains startup options on either side of the import
+        //   // statement. This is done intentionally to make option priority clear.
+        //   std::string command_line_source;
+        //   std::string& most_recent_blazerc = command_line_source;
+        //   std::vector<std::string> accumulated_options;
+        //   for (const auto& flag : parsed_startup_options->original_startup_options_) {
+        //     if (flag.source == most_recent_blazerc) {
+        //       accumulated_options.push_back(flag.value);
+        //     } else {
+        //       PrintStartupOptions(most_recent_blazerc, accumulated_options);
+        //       // Start accumulating again.
+        //       accumulated_options.clear();
+        //       accumulated_options.push_back(flag.value);
+        //       most_recent_blazerc = flag.source;
+        //     }
+        //   }
+        //   // Don't forget to print out the last ones.
+        //   PrintStartupOptions(most_recent_blazerc, accumulated_options);
+    }
+
     // blaze_exit_code::ExitCode OptionProcessor::ParseStartupOptions(
     //     const std::vector<RcFile*> &rc_files, std::string *error) {
     //   // Rc files can import other files at any point, and these imported rcs are
@@ -588,15 +576,16 @@ impl OptionProcessor {
     //   return processed_env;
     // }
 
-    // // IMPORTANT: The options added here do not come from the user. In order for
-    // // their source to be correctly tracked, the options must either be passed
-    // // as --default_override=0, 0 being "client", or must be listed in
-    // // BlazeOptionHandler.INTERNAL_COMMAND_OPTIONS!
-    // std::vector<std::string> OptionProcessor::get_blazerc_and_env_command_args(
-    //     const std::string& cwd,
-    //     const std::vector<RcFile*>& blazercs,
-    //     const std::vector<std::string>& env) {
-    fn get_blazerc_and_env_command_args() -> Vec<String> {
+    /// IMPORTANT: The options added here do not come from the user. In order for
+    /// their source to be correctly tracked, the options must either be passed
+    /// as --default_override=0, 0 being "client", or must be listed in
+    /// BlazeOptionHandler.INTERNAL_COMMAND_OPTIONS!
+    fn get_blazerc_and_env_command_args(
+        &self,
+        cwd: &str,         // const std::string& cwd,
+        rcs: Vec<&RcFile>, //     const std::vector<RcFile*>& blazercs,
+        env: Vec<String>,  //     const std::vector<std::string>& env
+    ) -> Vec<String> {
         //   // Provide terminal options as coming from the least important rc file.
         //   std::vector<std::string> result = {
         //       "--rc_source=client",
@@ -650,10 +639,14 @@ impl OptionProcessor {
         //   }
         //   result.push_back("--client_cwd=" + blaze_util::ConvertPath(cwd));
         //   return result;
+        unimplemented!()
     }
 
-    // std::vector<std::string> OptionProcessor::get_command_arguments() const {
-    fn get_command_arguments() -> Vec<String> {
+    /// Gets the arguments to the command. This is put together from the default
+    /// options specified in the blazerc file(s), the command line, and various
+    /// bits and pieces of information about the environment the blaze binary is
+    /// executed in.
+    fn get_command_arguments(&self) -> Vec<String> {
         //   assert(cmd_line_ != nullptr);
         //   // When the user didn't specify a command, the server expects the command
         //   // arguments to be empty in order to display the help message.
@@ -662,30 +655,26 @@ impl OptionProcessor {
         //   }
         //
         //   std::vector<std::string> command_args = blazerc_and_env_command_args_;
-        //   command_args.insert(command_args.end(),
-        //                       cmd_line_->command_args.begin(),
-        //                       cmd_line_->command_args.end());
+        //   command_args.insert(command_args.end(), cmd_line_->command_args.begin(), cmd_line_->command_args.end());
         //   return command_args;
+        unimplemented!()
     }
 
     /// Gets the arguments explicitly provided by the user's command line.
     fn get_explicit_command_arguments(&self) -> Vec<String> {
-        // std::vector<std::string> OptionProcessor::get_explicit_command_arguments() const {
-
         assert!(self.cmd_line.is_some());
-        // self.cmd_line.command_args
-        unimplemented!();
+        self.cmd_line.as_ref().unwrap().command_args.clone()
     }
 
-    // std::string OptionProcessor::GetCommand() const {
-    //   assert(cmd_line_ != nullptr);
-    //   return cmd_line_->command;
-    // }
-    //
-    // StartupOptions* OptionProcessor::GetParsedStartupOptions() const {
-    //   assert(parse_options_called_);
-    //   return startup_options_.get();
-    // }
+    pub fn get_command(&self) -> String {
+        assert!(self.cmd_line.is_some());
+        self.cmd_line.as_ref().unwrap().command.clone()
+    }
+
+    pub fn get_parsed_startup_options(&self) -> StartupOptions {
+        assert!(self.parse_options_called);
+        self.startup_options.clone()
+    }
 }
 
 mod internal {
