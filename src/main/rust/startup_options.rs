@@ -136,26 +136,8 @@ pub struct StartupOptions {
     //   // descriptive string for any value other than blaze_exit_code::SUCCESS.
     //   blaze_exit_code::ExitCode AddJVMArguments(const blaze_util::Path &server_javabase, std::vector<std::string> *result, const std::vector<std::string> &user_options, std::string *error) const;
     //
-    //   // Checks whether "arg" is a valid nullary option (e.g. "--master_bazelrc" or
-    //   // "--nomaster_bazelrc").
-    //   //
-    //   // Returns true, if "arg" looks like either a valid nullary option or a
-    //   // potentially valid unary option. In this case, "result" will be populated
-    //   // with true iff "arg" is definitely a valid nullary option.
-    //   //
-    //   // Returns false, if "arg" looks like an attempt to pass a value to nullary
-    //   // option (e.g. "--nullary_option=idontknowwhatimdoing"). In this case,
-    //   // "error" will be populated with a user-friendly error message.
-    //   //
-    //   // Therefore, callers of this function should look at the return value and
-    //   // then either look at "result" (on true) or "error" (on false).
-    //   bool MaybeCheckValidNullary(const std::string &arg, bool *result, std::string *error) const;
-    //
-    //   // Checks whether the argument is a valid unary option.
-    //   // E.g. --blazerc=foo, --blazerc foo.
-    //   bool IsUnary(const std::string& arg) const;
-    //
     //   std::string get_lowercase_product_name() const;
+
     /// The capitalized name of this binary.
     product_name: String,
 
@@ -549,7 +531,7 @@ impl StartupOptions {
         //       incompatible_enable_execution_transition(false),
         //       windows_enable_symlinks(false) {
 
-        let ret = Self {
+        Self {
             product_name,
             server_jvm_out: None,
             failure_detail_out: None,
@@ -581,9 +563,9 @@ impl StartupOptions {
             special_nullary_startup_flags: Default::default(),
             valid_unary_startup_flags: Default::default(),
             option_sources_key_override: Default::default(),
-        };
+        }
 
-        //   if (blaze::IsRunningWithinTest()) {
+        //   if (blaze::is_running_within_test()) {
         //     output_root = blaze_util::MakeAbsolute(blaze::GetPathEnv("TEST_TMPDIR"));
         //     max_idle_secs = 15;
         //     BAZEL_LOG(USER) << "$TEST_TMPDIR defined: output root default is '"
@@ -646,43 +628,38 @@ impl StartupOptions {
         //   RegisterUnaryStartupFlag("output_user_root");
         //   RegisterUnaryStartupFlag("server_jvm_out");
         //   RegisterUnaryStartupFlag("failure_detail_out");
-
-        ret
     }
 
     pub fn lowercase_product_name(&self) -> String {
         self.product_name.to_lowercase()
     }
 
-    // bool StartupOptions::IsUnary(const string &arg) const {
-    //   std::string::size_type i = arg.find_first_of('=');
-    //   if (i == std::string::npos) {
-    //     return valid_unary_startup_flags_.find(arg) !=
-    //            valid_unary_startup_flags_.end();
-    //   } else {
-    //     return valid_unary_startup_flags_.find(arg.substr(0, i)) !=
-    //            valid_unary_startup_flags_.end();
-    //   }
-    // }
+    /// Checks whether the argument is a valid unary option.
+    /// E.g. --blazerc=foo, --blazerc foo.
+    pub fn is_unary(&self, arg: &str) -> bool {
+        match arg.find('=') {
+            None => self.valid_unary_startup_flags.contains(arg),
+            Some(a) => self.valid_unary_startup_flags.contains(&arg[0..a]),
+        }
+    }
 
-    // bool StartupOptions::MaybeCheckValidNullary(const string &arg, bool *result, std::string *error) const {
-    //   std::string::size_type i = arg.find_first_of('=');
-    //   if (i == std::string::npos) {
-    //     *result = all_nullary_startup_flags_.find(arg) !=
-    //               all_nullary_startup_flags_.end();
-    //     return true;
-    //   }
-    //   std::string f = arg.substr(0, i);
-    //   if (all_nullary_startup_flags_.find(f) == all_nullary_startup_flags_.end()) {
-    //     *result = false;
-    //     return true;
-    //   }
-    //
-    //   blaze_util::StringPrintf(
-    //       error, "In argument '%s': option '%s' does not take a value.",
-    //       arg.c_str(), f.c_str());
-    //   return false;
-    // }
+    /// Checks whether "arg" is a valid nullary option (e.g. "--master_bazelrc"
+    /// or "--nomaster_bazelrc").
+    pub fn check_valid_nullary(&self, arg: &str) -> Result<bool, String> {
+        let i = match arg.find('=') {
+            None => {
+                return Ok(self.all_nullary_startup_flags.contains_key(arg))
+            }
+            Some(i) => i
+        };
+        let f = &arg[0..i];
+
+        if !self.all_nullary_startup_flags.contains_key(f) {
+            return Ok(false)
+        }
+
+        Err(format!("In argument '{}': option '{}' does not take a value.", arg, f))
+    }
 
     // void StartupOptions::add_extra_options(vector<string> *result) const {
     //   if (incompatible_enable_execution_transition) {
@@ -703,7 +680,7 @@ impl StartupOptions {
     //   const char* value = NULL;
     //
     //   bool is_nullary;
-    //   if (!MaybeCheckValidNullary(argstr, &is_nullary, error)) {
+    //   if (!maybe_check_valid_nullary(argstr, &is_nullary, error)) {
     //     *is_space_separated = false;
     //     return blaze_exit_code::BAD_ARGV;
     //   }
@@ -743,23 +720,23 @@ impl StartupOptions {
     //   }
     //
     //   if ((value = GetUnaryOption(arg, next_arg, "--output_base")) != NULL) {
-    //     output_base = blaze_util::Path(blaze::AbsolutePathFromFlag(value));
+    //     output_base = blaze_util::Path(blaze::absolute_path_from_flag(value));
     //     option_sources["output_base"] = rcfile;
     //   } else if ((value = GetUnaryOption(arg, next_arg,
     //                                      "--install_base")) != NULL) {
-    //     install_base = blaze::AbsolutePathFromFlag(value);
+    //     install_base = blaze::absolute_path_from_flag(value);
     //     option_sources["install_base"] = rcfile;
     //   } else if ((value = GetUnaryOption(arg, next_arg,
     //                                      "--output_user_root")) != NULL) {
-    //     output_user_root = blaze::AbsolutePathFromFlag(value);
+    //     output_user_root = blaze::absolute_path_from_flag(value);
     //     option_sources["output_user_root"] = rcfile;
     //   } else if ((value = GetUnaryOption(arg, next_arg,
     //                                      "--server_jvm_out")) != NULL) {
-    //     server_jvm_out = blaze_util::Path(blaze::AbsolutePathFromFlag(value));
+    //     server_jvm_out = blaze_util::Path(blaze::absolute_path_from_flag(value));
     //     option_sources["server_jvm_out"] = rcfile;
     //   } else if ((value = GetUnaryOption(arg, next_arg, "--failure_detail_out")) !=
     //              NULL) {
-    //     failure_detail_out = blaze_util::Path(blaze::AbsolutePathFromFlag(value));
+    //     failure_detail_out = blaze_util::Path(blaze::absolute_path_from_flag(value));
     //     option_sources["failure_detail_out"] = rcfile;
     //   } else if ((value = GetUnaryOption(arg, next_arg, "--host_jvm_profile")) !=
     //              NULL) {
@@ -770,7 +747,7 @@ impl StartupOptions {
     //     // TODO(bazel-team): Consider examining the javabase and re-execing in case
     //     // of architecture mismatch.
     //     explicit_server_javabase_ =
-    //         blaze_util::Path(blaze::AbsolutePathFromFlag(value));
+    //         blaze_util::Path(blaze::absolute_path_from_flag(value));
     //     option_sources["server_javabase"] = rcfile;
     //   } else if ((value = GetUnaryOption(arg, next_arg, "--host_jvm_args")) !=
     //              NULL) {

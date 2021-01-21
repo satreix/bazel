@@ -13,11 +13,13 @@ use crate::rc_file::RcFile;
 use crate::StartupOptions;
 use slog::o;
 use std::collections::HashSet;
+use crate::bazel_util::is_arg;
 
 /// Broken down structure of the command line into logical components. The raw
 /// arguments should not be referenced after this structure exists. This
 /// breakdown should suffice to access the parts of the command line that the
 /// client cares about, notably the binary and startup startup options.
+#[derive(Debug, PartialEq)]
 pub struct CommandLine {
     path_to_binary: String,
     startup_args: Vec<String>,
@@ -139,11 +141,6 @@ impl OptionProcessor {
     //       parse_options_called_(false),
     //       system_bazelrc_path_(system_bazelrc_path) {}
 
-    /// Returns the lower-case product name associated with this options processor.
-    pub fn get_lowercase_product_name() -> &'static str {
-        "bazel"
-    }
-
     // blaze_exit_code::ExitCode ParseStartupOptions(const std::vector<RcFile*>& rc_files, std::string* error);
 
     // #include <stdio.h>
@@ -179,10 +176,6 @@ impl OptionProcessor {
     // static constexpr const char* kRcBasename = ".bazelrc";
     // static std::vector<std::string> GetProcessedEnv();
 
-    pub fn lowercase_product_name(&self) -> String {
-        self.startup_options.lowercase_product_name()
-    }
-
     /// Splits the arguments of a command line invocation.
     ///
     /// For instance:
@@ -195,93 +188,91 @@ impl OptionProcessor {
     /// result.command_args = {"--myflag", "value", ":mytarget"}
     ///
     /// Note that result.startup_args is guaranteed to contain only valid
-    /// startup options (w.r.t. StartupOptions::IsUnary and
+    /// startup options (w.r.t. StartupOptions::is_unary and
     /// StartupOptions::IsNullary) and unary startup args of the form '--bar blah'
     /// are rewritten as '--bar=blah' for uniformity.
     /// In turn, the command and command args are not rewritten nor validated.
     ///
     /// If the method fails then error will contain the cause, otherwise error
     /// remains untouched.
-    pub fn split_command_line(&self) -> Result<CommandLine, String> {
-        //   const string lowercase_product_name = get_lowercase_product_name();
-        //
-        //   if (args.empty()) {
-        //     blaze_util::StringPrintf(error, "Unable to split command line, args is empty");
-        //     return nullptr;
-        //   }
-        //
-        //   string& path_to_binary = args[0];
-        //
-        //   // Process the startup options.
-        //   vector<string> startup_args;
-        //   vector<string>::size_type i = 1;
-        //   while (i < args.size() && IsArg(args[i])) {
-        //     string& current_arg = args[i];
-        //
-        //     bool is_nullary;
-        //     if (!startup_options_->MaybeCheckValidNullary(current_arg, &is_nullary, error)) {
-        //       return nullptr;
-        //     }
-        //
-        //     // If the current argument is a valid nullary startup option such as
-        //     // --master_bazelrc or --nomaster_bazelrc proceed to examine the next
-        //     // argument.
-        //     if (is_nullary) {
-        //       startup_args.push_back(current_arg);
-        //       i++;
-        //     } else if (startup_options_->IsUnary(current_arg)) {
-        //       // If the current argument is a valid unary startup option such as
-        //       // --bazelrc there are two cases to consider.
-        //
-        //       // The option is of the form '--bazelrc=value', hence proceed to
-        //       // examine the next argument.
-        //       if (current_arg.find('=') != string::npos) {
-        //         startup_args.push_back(std::move(current_arg));
-        //         i++;
-        //       } else {
-        //         // Otherwise, the option is of the form '--bazelrc value', hence
-        //         // skip the next argument and proceed to examine the argument located
-        //         // two places after.
-        //         if (i + 1 >= args.size()) {
-        //           blaze_util::StringPrintf(
-        //               error,
-        //               "Startup option '%s' expects a value.\n"
-        //               "Usage: '%s=somevalue' or '%s somevalue'.\n"
-        //               "  For more info, run '%s help startup_options'.",
-        //               current_arg.c_str(), current_arg.c_str(), current_arg.c_str(),
-        //               lowercase_product_name.c_str());
-        //           return nullptr;
-        //         }
-        //         // In this case we transform it to the form '--bazelrc=value'.
-        //         startup_args.push_back(std::move(current_arg) + "=" +
-        //                                std::move(args[i + 1]));
-        //         i += 2;
-        //       }
-        //     } else {
-        //       // If the current argument is not a valid unary or nullary startup option
-        //       // then fail.
-        //       blaze_util::StringPrintf(
-        //           error,
-        //           "Unknown startup option: '%s'.\n"
-        //           "  For more info, run '%s help startup_options'.",
-        //           current_arg.c_str(), lowercase_product_name.c_str());
-        //       return nullptr;
-        //     }
-        //   }
-        //
-        //   // The command is the arg right after the startup options.
-        //   if (i == args.size()) {
-        //     return std::unique_ptr<CommandLine>(new CommandLine(
-        //         std::move(path_to_binary), std::move(startup_args), "", {}));
-        //   }
-        //   string& command = args[i];
-        //
-        //   // The rest are the command arguments.
-        //   vector<string> command_args(std::make_move_iterator(args.begin() + i + 1),
-        //                               std::make_move_iterator(args.end()));
-        //
-        //   return std::unique_ptr<CommandLine>(new CommandLine(std::move(path_to_binary), std::move(startup_args), std::move(command), std::move(command_args)));
-        unimplemented!()
+    pub fn split_command_line(&self, args: Vec<String>) -> Result<CommandLine, String> {
+        if args.is_empty() {
+            return Err(String::from("Unable to split command line, args is empty"));
+        }
+
+        let path_to_binary = args[0].clone();
+
+        // Process the startup options.
+        let mut startup_args = Vec::<String>::new();
+
+        let mut i = 1;
+        while i < args.len() && is_arg(&args[1]) {
+            let current_arg = args[1].clone(); // string& current_arg = args[i];
+
+            let is_nullary = self.startup_options.check_valid_nullary(&current_arg)?;
+
+            // If the current argument is a valid nullary startup option such as
+            // --master_bazelrc or --nomaster_bazelrc proceed to examine the next
+            // argument.
+            if is_nullary {
+                startup_args.push(current_arg);
+                i += 1;
+            } else if self.startup_options.is_unary(&current_arg) {
+                //       // If the current argument is a valid unary startup option such as
+                //       // --bazelrc there are two cases to consider.
+                //
+                //       // The option is of the form '--bazelrc=value', hence proceed to
+                //       // examine the next argument.
+                //       if (current_arg.find('=') != string::npos) {
+                //         startup_args.push_back(std::move(current_arg));
+                //         i++;
+                //       } else {
+                //         // Otherwise, the option is of the form '--bazelrc value', hence
+                //         // skip the next argument and proceed to examine the argument located
+                //         // two places after.
+                //         if (i + 1 >= args.size()) {
+                //           blaze_util::StringPrintf(
+                //               error,
+                //               "Startup option '%s' expects a value.\n"
+                //               "Usage: '%s=somevalue' or '%s somevalue'.\n"
+                //               "  For more info, run 'bazel help startup_options'.",
+                //               current_arg.c_str(), current_arg.c_str(), current_arg.c_str());
+                //           return nullptr;
+                //         }
+                //         // In this case we transform it to the form '--bazelrc=value'.
+                //         startup_args.push_back(std::move(current_arg) + "=" +
+                //                                std::move(args[i + 1]));
+                //         i += 2;
+                //       }
+                unimplemented!()
+            } else {
+                // If the current argument is not a valid unary or nullary startup option then fail.
+                return Err(format!("Unknown startup option: '{}'.\n  For more info, run 'bazel help startup_options'.", current_arg))
+            }
+        };
+
+        // The command is the arg right after the startup options.
+        if i == args.len() {
+            return Ok(CommandLine{
+                path_to_binary,
+                startup_args,
+                command: "".to_string(),
+                command_args: Default::default()
+            })
+        }
+
+        let command = args[i].clone();
+
+        // The rest are the command arguments.
+        let command_args = Vec::<String>::new();
+        // FIXME args[i+1..]
+
+        Ok(CommandLine {
+            path_to_binary,
+            startup_args,
+            command,
+            command_args,
+        })
     }
 
     // // TODO(#4502) Consider simplifying result_rc_files to a vector of RcFiles, no
@@ -298,7 +289,7 @@ impl OptionProcessor {
         //   std::vector<std::string> rc_files;
 
         //   // Get the system rc (unless --nosystem_rc).
-        //   if (SearchNullaryOption(cmd_line->startup_args, "system_rc", true)) {
+        //   if (search_nullary_option(cmd_line->startup_args, "system_rc", true)) {
         //     // MakeAbsoluteAndResolveEnvvars will standardize the form of the
         //     // provided path. This also means we accept relative paths, which is
         //     // is convenient for testing.
@@ -309,13 +300,13 @@ impl OptionProcessor {
         //   // Get the workspace rc: %workspace%/.bazelrc (unless --noworkspace_rc), but
         //   // only if we are in a workspace: invoking commands like "help" from outside
         //   // a workspace should work.
-        //   if (!workspace.empty() && SearchNullaryOption(cmd_line->startup_args, "workspace_rc", true)) {
+        //   if (!workspace.empty() && search_nullary_option(cmd_line->startup_args, "workspace_rc", true)) {
         //     const std::string workspaceRcFile = blaze_util::JoinPath(workspace, kRcBasename);
         //     rc_files.push_back(workspaceRcFile);
         //   }
         //
         //   // Get the user rc: $HOME/.bazelrc (unless --nohome_rc)
-        //   if (SearchNullaryOption(cmd_line->startup_args, "home_rc", true)) {
+        //   if (search_nullary_option(cmd_line->startup_args, "home_rc", true)) {
         //     const std::string home = blaze::GetHomeDir();
         //     if (!home.empty()) {
         //       rc_files.push_back(blaze_util::JoinPath(home, kRcBasename));
@@ -326,9 +317,9 @@ impl OptionProcessor {
 
         //   // Get the command-line provided rc, passed as --bazelrc or nothing if the
         //   // flag is absent.
-        //   const char* cmd_line_rc_file = SearchUnaryOption(cmd_line->startup_args, "--bazelrc", true);
+        //   const char* cmd_line_rc_file = search_unary_option(cmd_line->startup_args, "--bazelrc", true);
         //   if (cmd_line_rc_file != nullptr) {
-        //     string absolute_cmd_line_rc = blaze::AbsolutePathFromFlag(cmd_line_rc_file);
+        //     string absolute_cmd_line_rc = blaze::absolute_path_from_flag(cmd_line_rc_file);
         //     // Unlike the previous 3 paths, where we ignore it if the file does not
         //     // exist or is unreadable, since this path is explicitly passed, this is an
         //     // error. Check this condition here.
@@ -413,7 +404,7 @@ impl OptionProcessor {
         assert!(!self.parse_options_called);
         self.parse_options_called = true;
 
-        let cmd_line = match self.split_command_line() {
+        let cmd_line = match self.split_command_line(args) {
             Ok(x) => x,
             Err(e) => return Err(exit_code::Error::new(exit_code::ExitCode::BadArgv, e)),
         };
@@ -424,7 +415,7 @@ impl OptionProcessor {
         //   // options will be rc first, then command line options, though, despite this
         //   // exception.
         //   std::vector<std::unique_ptr<RcFile>> rc_files;
-        //   if (!SearchNullaryOption(cmd_line_->startup_args, "ignore_all_rc_files", false)) {
+        //   if (!search_nullary_option(cmd_line_->startup_args, "ignore_all_rc_files", false)) {
         //     const blaze_exit_code::ExitCode rc_parsing_exit_code = get_rc_files(workspace_layout_, workspace, cwd, cmd_line_.get(), &rc_files, error);
         //     if (rc_parsing_exit_code != blaze_exit_code::SUCCESS) {
         //       return rc_parsing_exit_code;
@@ -503,7 +494,7 @@ impl OptionProcessor {
     //   }
     //
     //   for (const std::string& arg : cmd_line_->startup_args) {
-    //     if (!IsArg(arg)) {
+    //     if (!is_arg(arg)) {
     //       break;
     //     }
     //     rcstartup_flags.push_back(RcStartupFlag("", arg));
@@ -721,7 +712,7 @@ mod internal {
     // std::string FindLegacyUserBazelrc(const char* cmd_line_rc_file,
     //                                   const std::string& workspace) {
     //   if (cmd_line_rc_file != nullptr) {
-    //     string rcFile = blaze::AbsolutePathFromFlag(cmd_line_rc_file);
+    //     string rcFile = blaze::absolute_path_from_flag(cmd_line_rc_file);
     //     if (!blaze_util::CanReadFile(rcFile)) {
     //       // The actual rc file reading will catch this - we ignore this here in the
     //       // legacy version since this is just a warning. Exit eagerly though.
@@ -753,7 +744,7 @@ mod internal {
     //   // Find the old list of rc files that would have been loaded here, so we can
     //   // provide a useful warning about old rc files that might no longer be read.
     //   std::vector<std::string> candidate_bazelrc_paths;
-    //   if (SearchNullaryOption(startup_args, "master_bazelrc", true)) {
+    //   if (search_nullary_option(startup_args, "master_bazelrc", true)) {
     //     const std::string workspace_rc =
     //         workspace_layout->GetWorkspaceRcPath(workspace, startup_args);
     //     const std::string binary_rc =
@@ -761,7 +752,7 @@ mod internal {
     //     candidate_bazelrc_paths = {workspace_rc, binary_rc, system_bazelrc_path};
     //   }
     //   string user_bazelrc_path = internal::FindLegacyUserBazelrc(
-    //       SearchUnaryOption(startup_args, "--bazelrc", /* warn_if_dupe */ true),
+    //       search_unary_option(startup_args, "--bazelrc", /* warn_if_dupe */ true),
     //       workspace);
     //   if (!user_bazelrc_path.empty()) {
     //     candidate_bazelrc_paths.push_back(user_bazelrc_path);
@@ -884,4 +875,286 @@ mod internal {
     //   }
     //   return result;
     // }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use slog::{o, Drain};
+
+    fn logger() -> slog::Logger {
+        let decorator = slog_term::PlainSyncDecorator::new(slog_term::TestStdoutWriter);
+        let drain = slog_term::FullFormat::new(decorator)
+            .build()
+            .filter_level(slog::Level::Debug)
+            .fuse();
+        slog::Logger::root(drain, o!())
+    }
+
+    fn option_processor() -> OptionProcessor {
+        OptionProcessor::new(
+            logger(),
+            StartupOptions::new(String::from("Bazel")),
+        )
+    }
+
+    #[test]
+    fn split_command_line_with_empty_args() {
+        let args = Vec::<String>::new();
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_err());
+        assert_eq!(
+            got.err().unwrap(),
+            String::from("Unable to split command line, args is empty")
+        )
+    }
+
+    #[test]
+    fn split_command_line_with_all_params() {
+        let args = vec![
+            "bazel".to_string(),
+            "--nomaster_bazelrc".to_string(),
+            "build".to_string(),
+            "--bar".to_string(),
+            ":mytarget".to_string(),
+        ];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_ok());
+        assert_eq!(
+            got.unwrap(),
+            CommandLine {
+                path_to_binary: "bazel".to_string(),
+                startup_args: vec!["--nomaster_bazelrc".to_string()],
+                command: "build".to_string(),
+                command_args: vec!["--bar".to_string(), ":mytarget".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn split_command_line_with_absolute_path_to_binary() {
+        let args = vec![
+            "mybazel".to_string(),
+            "build".to_string(),
+            ":mytarget".to_string(),
+        ];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_ok());
+        assert_eq!(
+            got.unwrap(),
+            CommandLine {
+                path_to_binary: "mybazel".to_string(),
+                startup_args: Default::default(),
+                command: "build".to_string(),
+                command_args: vec![":mytarget".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn split_command_line_with_unary_startup_with_equal() {
+        let args = vec![
+            "bazel".to_string(),
+            "--bazelrc=foo".to_string(),
+            "build".to_string(),
+            ":mytarget".to_string(),
+        ];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_ok());
+        assert_eq!(
+            got.unwrap(),
+            CommandLine {
+                path_to_binary: "bazel".to_string(),
+                startup_args: vec!["--bazelrc=foo".to_string()],
+                command: "build".to_string(),
+                command_args: vec![":mytarget".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn split_command_line_with_unary_startup_without_equal() {
+        let args = vec![
+            "bazel".to_string(),
+            "--bazelrc".to_string(),
+            "foo".to_string(),
+            "build".to_string(),
+            ":mytarget".to_string(),
+        ];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_ok());
+        assert_eq!(
+            got.unwrap(),
+            CommandLine {
+                path_to_binary: "bazel".to_string(),
+                startup_args: vec!["--bazelrc=foo".to_string()],
+                command: "build".to_string(),
+                command_args: vec![":mytarget".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn split_command_line_with_incomplete_unary_option() {
+        let args = vec!["bazel".to_string(), "--bazelrc".to_string()];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_err());
+        assert_eq!(got.err().unwrap(), String::from("Startup option '--bazelrc' expects a value.\nUsage: '--bazelrc=somevalue' or '--bazelrc somevalue'.\n  For more info, run 'bazel help startup_options'."));
+    }
+
+    #[test]
+    fn split_command_line_with_multiple_startup() {
+        let args = vec![
+            "bazel".to_string(),
+            "--bazelrc".to_string(),
+            "foo".to_string(),
+            "--nomaster_bazelrc".to_string(),
+            "build".to_string(),
+            ":mytarget".to_string(),
+        ];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_ok());
+        assert_eq!(
+            got.unwrap(),
+            CommandLine {
+                path_to_binary: "bazel".to_string(),
+                startup_args: vec![
+                    "--bazelrc=foo".to_string(),
+                    "--nomaster_bazelrc".to_string()
+                ],
+                command: "build".to_string(),
+                command_args: vec![":mytarget".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn split_command_line_with_no_startup_args() {
+        let args = vec![
+            "bazel".to_string(),
+            "build".to_string(),
+            ":mytarget".to_string(),
+        ];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_ok());
+        assert_eq!(
+            got.unwrap(),
+            CommandLine {
+                path_to_binary: "bazel".to_string(),
+                startup_args: Default::default(),
+                command: "build".to_string(),
+                command_args: vec![":mytarget".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn split_command_line_with_no_command_args() {
+        let args = vec!["bazel".to_string(), "build".to_string()];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_ok());
+        assert_eq!(
+            got.unwrap(),
+            CommandLine {
+                path_to_binary: "bazel".to_string(),
+                startup_args: Default::default(),
+                command: "build".to_string(),
+                command_args: Default::default(),
+            }
+        );
+    }
+
+    #[test]
+    fn split_command_line_with_bazel_help() {
+        let args = vec!["bazel".to_string(), "help".to_string()];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_ok());
+        assert_eq!(
+            got.unwrap(),
+            CommandLine {
+                path_to_binary: "bazel".to_string(),
+                startup_args: Default::default(),
+                command: "help".to_string(),
+                command_args: Default::default(),
+            }
+        );
+    }
+
+    #[test]
+    fn split_command_line_with_bazel_version() {
+        let args = vec!["bazel".to_string(), "version".to_string()];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_ok());
+        assert_eq!(
+            got.unwrap(),
+            CommandLine {
+                path_to_binary: "bazel".to_string(),
+                startup_args: Default::default(),
+                command: "version".to_string(),
+                command_args: Default::default(),
+            }
+        );
+    }
+
+    #[test]
+    fn split_command_line_with_multiple_command_args() {
+        let args = vec![
+            "bazel".to_string(),
+            "build".to_string(),
+            "--foo".to_string(),
+            "-s".to_string(),
+            ":mytarget".to_string(),
+        ];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_ok());
+        assert_eq!(
+            got.unwrap(),
+            CommandLine {
+                path_to_binary: "bazel".to_string(),
+                startup_args: Default::default(),
+                command: "build".to_string(),
+                command_args: vec![
+                    "--foo".to_string(),
+                    "-s".to_string(),
+                    ":mytarget".to_string()
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn split_command_line_with_dash_in_startup_args() {
+        let args = vec!["bazel".to_string(), "--".to_string()];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_err());
+        assert_eq!(
+            got.err().unwrap(),
+            String::from(
+                "Unknown startup option: '--'.\n  For more info, run 'bazel help startup_options'."
+            )
+        );
+    }
+
+    #[test]
+    fn split_command_line_with_dash_dash() {
+        let args = vec![
+            "bazel".to_string(),
+            "--nomaster_bazelrc".to_string(),
+            "build".to_string(),
+            "--b".to_string(),
+            "--".to_string(),
+            ":mytarget".to_string(),
+        ];
+        let got = option_processor().split_command_line(args);
+        assert!(got.is_ok());
+        assert_eq!(
+            got.unwrap(),
+            CommandLine {
+                path_to_binary: "bazel".to_string(),
+                startup_args: vec!["--nomaster_bazelrc".to_string()],
+                command: "build".to_string(),
+                command_args: vec!["--b".to_string(), ":mytarget".to_string()],
+            }
+        );
+    }
 }

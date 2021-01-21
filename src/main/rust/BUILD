@@ -11,6 +11,7 @@ rust_library(
     srcs = [
         "archive_utils.rs",
         "bazel_startup_options.rs",
+        "bazel_util.rs",
         "exit_code.rs",
         "lib.rs",
         "option_processor.rs",
@@ -23,6 +24,7 @@ rust_library(
     deps = [
         "//cargo:dirs",
         "//cargo:slog",
+        "//cargo:slog_term",
         "//cargo:whoami",
         "//cargo:zip",
         "//src/main/protobuf:command_server_rust_proto",

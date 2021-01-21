@@ -104,6 +104,7 @@ mod rc_file;
 mod server_process_info;
 mod startup_options;
 mod workspace_layout;
+mod bazel_util;
 
 use crate::exit_code::ExitCode;
 pub use crate::option_processor::OptionProcessor;
@@ -599,7 +600,7 @@ impl BazelServer {
         //   // Wait for the server process to terminate (if we know the server PID).
         //   // If it does not terminate itself gracefully within 1m, terminate it.
         //   if (process_info_.server_pid_ > 0 &&
-        //       !AwaitServerProcessTermination(process_info_.server_pid_, output_base_,
+        //       !await_server_process_termination(process_info_.server_pid_, output_base_,
         //                                      kPostShutdownGracePeriodSeconds)) {
         //     if (!status.ok()) {
         //       BAZEL_LOG(WARNING)
@@ -750,7 +751,7 @@ impl BazelServer {
         //     // wait $GRPC_CLIENT_CHANNEL_BACKUP_POLL_INTERVAL_MS until we go away.
         //     // See http://b/143860035.
         //     client_.reset();
-        //     if (!AwaitServerProcessTermination(process_info_.server_pid_, output_base_,
+        //     if (!await_server_process_termination(process_info_.server_pid_, output_base_,
         //                                        kPostShutdownGracePeriodSeconds)) {
         //       KillServerProcess(process_info_.server_pid_, output_base_);
         //     }
@@ -2250,7 +2251,7 @@ pub fn main(
 
     //   startup_options->MaybeLogStartupOptionWarnings();
 
-    //   SetDebugLog(startup_options->client_debug);
+    //   set_debug_log(startup_options->client_debug);
     // If client_debug was false, this is ignored, so it's accurate.
     info!(
         log,
