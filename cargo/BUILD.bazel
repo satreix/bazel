@@ -13,6 +13,15 @@ licenses([
 
 # Aliased targets
 alias(
+    name = "chrono",
+    actual = "@raze__chrono__0_4_19//:chrono",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
     name = "dirs",
     actual = "@raze__dirs__3_0_1//:dirs",
     tags = [

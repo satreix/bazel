@@ -89,6 +89,7 @@
 
 use std::path::Path;
 
+extern crate chrono;
 extern crate dirs;
 extern crate protobuf;
 extern crate slog;
@@ -98,31 +99,26 @@ extern crate zip;
 
 mod archive_utils;
 mod bazel_startup_options;
+mod bazel_util;
 mod exit_code;
 mod option_processor;
 mod rc_file;
 mod server_process_info;
 mod startup_options;
 mod workspace_layout;
-mod bazel_util;
 
 use crate::exit_code::ExitCode;
 pub use crate::option_processor::OptionProcessor;
 use crate::server_process_info::ServerProcessInfo;
 pub use crate::startup_options::StartupOptions;
-use std::time::Duration;
+use chrono::Duration;
 
 extern crate command_server_rust_proto;
 
-// #include <string>
-//
-// #include "src/main/cpp/option_processor.h"
-// #include "src/main/cpp/workspace_layout.h"
-// #include "src/main/cpp/util/logging.h"
-//
-// #include "src/main/cpp/blaze.h"
-//
+// #include <algorithm>
 // #include <assert.h>
+// #include <chrono>  // NOLINT (gRPC requires this)
+// #include <cinttypes>
 // #include <ctype.h>
 // #include <fcntl.h>
 // #include <grpc/grpc.h>
@@ -132,19 +128,16 @@ extern crate command_server_rust_proto;
 // #include <grpcpp/create_channel.h>
 // #include <grpcpp/security/credentials.h>
 // #include <limits.h>
-// #include <stdarg.h>
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <string.h>
-//
-// #include <algorithm>
-// #include <chrono>  // NOLINT (gRPC requires this)
-// #include <cinttypes>
 // #include <map>
 // #include <memory>
 // #include <mutex>  // NOLINT
 // #include <set>
 // #include <sstream>
+// #include <stdarg.h>
+// #include <stdio.h>
+// #include <stdlib.h>
+// #include <string.h>
+// #include <string>
 // #include <string>
 // #include <thread>  // NOLINT
 // #include <unordered_set>
@@ -157,8 +150,10 @@ extern crate command_server_rust_proto;
 // #endif
 //
 // #include "src/main/cpp/archive_utils.h"
+// #include "src/main/cpp/blaze.h"
 // #include "src/main/cpp/blaze_util.h"
 // #include "src/main/cpp/blaze_util_platform.h"
+// #include "src/main/cpp/option_processor.h"
 // #include "src/main/cpp/option_processor.h"
 // #include "src/main/cpp/server_process_info.h"
 // #include "src/main/cpp/startup_options.h"
@@ -166,11 +161,13 @@ extern crate command_server_rust_proto;
 // #include "src/main/cpp/util/errors.h"
 // #include "src/main/cpp/util/exit_code.h"
 // #include "src/main/cpp/util/file.h"
+// #include "src/main/cpp/util/logging.h"
 // #include "src/main/cpp/util/numbers.h"
 // #include "src/main/cpp/util/path.h"
 // #include "src/main/cpp/util/path_platform.h"
 // #include "src/main/cpp/util/port.h"
 // #include "src/main/cpp/util/strings.h"
+// #include "src/main/cpp/workspace_layout.h"
 // #include "src/main/cpp/workspace_layout.h"
 // #include "src/main/protobuf/command_server.grpc.pb.h"
 //

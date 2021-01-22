@@ -22,6 +22,7 @@ rust_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//cargo:chrono",
         "//cargo:dirs",
         "//cargo:slog",
         "//cargo:slog_term",

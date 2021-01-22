@@ -1,6 +1,7 @@
-use std::time::Duration;
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::env;
+use std::path::PathBuf;
+use std::time::Duration;
 
 const POST_KILL_GRACE_PERIOD: Duration = Duration::from_secs(10);
 const POST_SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(60);
@@ -29,12 +30,12 @@ pub struct EnvVarValue {
     /// What should be done with the given variable
     action: EnvVarAction,
     /// The value of the variable; ignored if action == UNSET
-    value: String
+    value: String,
 }
 
 impl EnvVarValue {
     pub fn new(action: EnvVarAction, value: String) -> Self {
-        Self{ action, value }
+        Self { action, value }
     }
 }
 
@@ -42,11 +43,11 @@ impl EnvVarValue {
 /// to a specified value (or unset). When it leaves scope, changed variables will
 /// be set to their original values.
 struct WithEnvVars {
-    old_values: HashMap<String,EnvVarValue>,
+    old_values: HashMap<String, EnvVarValue>,
 }
 
 impl WithEnvVars {
-    pub fn new(vars: HashMap<String,EnvVarValue>) -> Self {
+    pub fn new(vars: HashMap<String, EnvVarValue>) -> Self {
         //   for (const auto& v : vars) {
         //     if (ExistsEnv(v.first)) {
         //       _old_values[v.first] = EnvVarValue(EnvVarAction::SET, GetEnv(v.first));
@@ -59,7 +60,7 @@ impl WithEnvVars {
         unimplemented!()
     }
 
-    fn set_env_vars(vars: HashMap<String,EnvVarValue>) {
+    fn set_env_vars(vars: HashMap<String, EnvVarValue>) {
         //   for (const auto& var : vars) {
         //     switch (var.second.action) {
         //       case EnvVarAction::UNSET:
@@ -313,5 +314,5 @@ pub fn set_debug_log(enabled: bool) {
 /// Returns true if this Bazel instance is running inside of a Bazel test.
 /// This method observes the TEST_TMPDIR envvar.
 pub fn is_running_within_test() -> bool {
-    std::env::var("TEST_TMPDIR").is_ok()
+    env::var("TEST_TMPDIR").is_ok()
 }

@@ -1,19 +1,50 @@
+// #include <algorithm>
+// #include <cassert>
+// #include <iterator>
 // #include <list>
 // #include <memory>
+// #include <set>
+// #include <sstream>
+// #include <stdio.h>
+// #include <stdlib.h>
+// #include <string.h>
 // #include <string>
 // #include <utility>
+// #include <utility>
 // #include <vector>
-//
+
+// #include "src/main/cpp/blaze_util.h"
+// #include "src/main/cpp/blaze_util_platform.h"
 // #include "src/main/cpp/rc_file.h"
 // #include "src/main/cpp/startup_options.h"
 // #include "src/main/cpp/util/exit_code.h"
+// #include "src/main/cpp/util/file.h"
+// #include "src/main/cpp/util/logging.h"
+// #include "src/main/cpp/util/path.h"
+// #include "src/main/cpp/util/path_platform.h"
+// #include "src/main/cpp/util/strings.h"
+// #include "src/main/cpp/workspace_layout.h"
 
+// // On OSX, there apparently is no header that defines this.
+// #ifndef environ
+// extern char **environ;
+// #endif
+
+// using std::map;
+// using std::set;
+// using std::string;
+// using std::vector;
+
+use crate::bazel_util::is_arg;
 use crate::exit_code::{self, ExitCode};
 use crate::rc_file::RcFile;
 use crate::StartupOptions;
 use slog::o;
 use std::collections::HashSet;
-use crate::bazel_util::is_arg;
+
+// constexpr char WorkspaceLayout::WorkspacePrefix[];
+const RC_BASENAME: &str = ".bazelrc";
+// static std::vector<std::string> GetProcessedEnv();
 
 /// Broken down structure of the command line into logical components. The raw
 /// arguments should not be referenced after this structure exists. This
@@ -143,39 +174,6 @@ impl OptionProcessor {
 
     // blaze_exit_code::ExitCode ParseStartupOptions(const std::vector<RcFile*>& rc_files, std::string* error);
 
-    // #include <stdio.h>
-    // #include <stdlib.h>
-    // #include <string.h>
-    // #include <algorithm>
-    // #include <cassert>
-    // #include <iterator>
-    // #include <set>
-    // #include <sstream>
-    // #include <utility>
-    //
-    // #include "src/main/cpp/blaze_util.h"
-    // #include "src/main/cpp/blaze_util_platform.h"
-    // #include "src/main/cpp/util/file.h"
-    // #include "src/main/cpp/util/logging.h"
-    // #include "src/main/cpp/util/path.h"
-    // #include "src/main/cpp/util/path_platform.h"
-    // #include "src/main/cpp/util/strings.h"
-    // #include "src/main/cpp/workspace_layout.h"
-    //
-    // // On OSX, there apparently is no header that defines this.
-    // #ifndef environ
-    // extern char **environ;
-    // #endif
-    //
-    // using std::map;
-    // using std::set;
-    // using std::string;
-    // using std::vector;
-    //
-    // constexpr char WorkspaceLayout::WorkspacePrefix[];
-    // static constexpr const char* kRcBasename = ".bazelrc";
-    // static std::vector<std::string> GetProcessedEnv();
-
     /// Splits the arguments of a command line invocation.
     ///
     /// For instance:
@@ -204,7 +202,6 @@ impl OptionProcessor {
 
         // Process the startup options.
         let mut startup_args = Vec::<String>::new();
-
         let mut i = 1;
         while i < args.len() && is_arg(&args[1]) {
             let current_arg = args[1].clone(); // string& current_arg = args[i];
@@ -218,54 +215,55 @@ impl OptionProcessor {
                 startup_args.push(current_arg);
                 i += 1;
             } else if self.startup_options.is_unary(&current_arg) {
-                //       // If the current argument is a valid unary startup option such as
-                //       // --bazelrc there are two cases to consider.
-                //
-                //       // The option is of the form '--bazelrc=value', hence proceed to
-                //       // examine the next argument.
-                //       if (current_arg.find('=') != string::npos) {
-                //         startup_args.push_back(std::move(current_arg));
-                //         i++;
-                //       } else {
-                //         // Otherwise, the option is of the form '--bazelrc value', hence
-                //         // skip the next argument and proceed to examine the argument located
-                //         // two places after.
-                //         if (i + 1 >= args.size()) {
-                //           blaze_util::StringPrintf(
-                //               error,
-                //               "Startup option '%s' expects a value.\n"
-                //               "Usage: '%s=somevalue' or '%s somevalue'.\n"
-                //               "  For more info, run 'bazel help startup_options'.",
-                //               current_arg.c_str(), current_arg.c_str(), current_arg.c_str());
-                //           return nullptr;
-                //         }
-                //         // In this case we transform it to the form '--bazelrc=value'.
-                //         startup_args.push_back(std::move(current_arg) + "=" +
-                //                                std::move(args[i + 1]));
-                //         i += 2;
-                //       }
-                unimplemented!()
+                // If the current argument is a valid unary startup option such as
+                // --bazelrc there are two cases to consider.
+
+                // The option is of the form '--bazelrc=value', hence proceed to
+                // examine the next argument.
+                match current_arg.find('=') {
+                    Some(_) => {
+                        startup_args.push(current_arg.clone());
+                        i += 1;
+                    }
+                    None => {
+                        // Otherwise, the option is of the form '--bazelrc value', hence
+                        // skip the next argument and proceed to examine the argument located
+                        // two places after.
+                        if i + 1 >= args.len() {
+                            return Err(format!(
+                                "Startup option '{0}' expects a value.\nUsage: '{0}=somevalue' or '{0} somevalue'.\n  For more info, run 'bazel help startup_options'.",
+                                current_arg,
+                            ));
+                        }
+                        // In this case we transform it to the form '--bazelrc=value'.
+                        startup_args.push(format!("{}={}", current_arg, args[i + 1]));
+                        i += 2;
+                    }
+                };
             } else {
                 // If the current argument is not a valid unary or nullary startup option then fail.
-                return Err(format!("Unknown startup option: '{}'.\n  For more info, run 'bazel help startup_options'.", current_arg))
+                return Err(format!("Unknown startup option: '{}'.\n  For more info, run 'bazel help startup_options'.", current_arg));
             }
-        };
+        }
 
         // The command is the arg right after the startup options.
         if i == args.len() {
-            return Ok(CommandLine{
+            return Ok(CommandLine {
                 path_to_binary,
                 startup_args,
                 command: "".to_string(),
-                command_args: Default::default()
-            })
+                command_args: Default::default(),
+            });
         }
 
         let command = args[i].clone();
 
         // The rest are the command arguments.
-        let command_args = Vec::<String>::new();
-        // FIXME args[i+1..]
+        let mut command_args = Vec::<String>::new();
+        // FIXME there must be a oneline to do this
+        for a in args[i + 1..].iter() {
+            command_args.push(a.to_string());
+        }
 
         Ok(CommandLine {
             path_to_binary,
@@ -301,7 +299,7 @@ impl OptionProcessor {
         //   // only if we are in a workspace: invoking commands like "help" from outside
         //   // a workspace should work.
         //   if (!workspace.empty() && search_nullary_option(cmd_line->startup_args, "workspace_rc", true)) {
-        //     const std::string workspaceRcFile = blaze_util::JoinPath(workspace, kRcBasename);
+        //     const std::string workspaceRcFile = blaze_util::JoinPath(workspace, K_RC_BASENAME);
         //     rc_files.push_back(workspaceRcFile);
         //   }
         //
@@ -309,7 +307,7 @@ impl OptionProcessor {
         //   if (search_nullary_option(cmd_line->startup_args, "home_rc", true)) {
         //     const std::string home = blaze::GetHomeDir();
         //     if (!home.empty()) {
-        //       rc_files.push_back(blaze_util::JoinPath(home, kRcBasename));
+        //       rc_files.push_back(blaze_util::JoinPath(home, K_RC_BASENAME));
         let p = dirs::home_dir().unwrap().join(".bazelrc");
         rc_files.push(String::from(p.to_str().unwrap()));
         //     }
@@ -721,14 +719,14 @@ mod internal {
     //     return rcFile;
     //   }
     //
-    //   string workspaceRcFile = blaze_util::JoinPath(workspace, kRcBasename);
+    //   string workspaceRcFile = blaze_util::JoinPath(workspace, K_RC_BASENAME);
     //   if (blaze_util::CanReadFile(workspaceRcFile)) {
     //     return workspaceRcFile;
     //   }
     //
     //   string home = blaze::GetHomeDir();
     //   if (!home.empty()) {
-    //     string userRcFile = blaze_util::JoinPath(home, kRcBasename);
+    //     string userRcFile = blaze_util::JoinPath(home, K_RC_BASENAME);
     //     if (blaze_util::CanReadFile(userRcFile)) {
     //       return userRcFile;
     //     }
@@ -892,17 +890,13 @@ mod test {
     }
 
     fn option_processor() -> OptionProcessor {
-        OptionProcessor::new(
-            logger(),
-            StartupOptions::new(String::from("Bazel")),
-        )
+        OptionProcessor::new(logger(), StartupOptions::new(String::from("Bazel")))
     }
 
     #[test]
     fn split_command_line_with_empty_args() {
         let args = Vec::<String>::new();
         let got = option_processor().split_command_line(args);
-        assert!(got.is_err());
         assert_eq!(
             got.err().unwrap(),
             String::from("Unable to split command line, args is empty")
@@ -919,7 +913,6 @@ mod test {
             ":mytarget".to_string(),
         ];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_ok());
         assert_eq!(
             got.unwrap(),
             CommandLine {
@@ -939,7 +932,6 @@ mod test {
             ":mytarget".to_string(),
         ];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_ok());
         assert_eq!(
             got.unwrap(),
             CommandLine {
@@ -960,7 +952,6 @@ mod test {
             ":mytarget".to_string(),
         ];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_ok());
         assert_eq!(
             got.unwrap(),
             CommandLine {
@@ -982,7 +973,6 @@ mod test {
             ":mytarget".to_string(),
         ];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_ok());
         assert_eq!(
             got.unwrap(),
             CommandLine {
@@ -998,7 +988,6 @@ mod test {
     fn split_command_line_with_incomplete_unary_option() {
         let args = vec!["bazel".to_string(), "--bazelrc".to_string()];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_err());
         assert_eq!(got.err().unwrap(), String::from("Startup option '--bazelrc' expects a value.\nUsage: '--bazelrc=somevalue' or '--bazelrc somevalue'.\n  For more info, run 'bazel help startup_options'."));
     }
 
@@ -1013,7 +1002,6 @@ mod test {
             ":mytarget".to_string(),
         ];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_ok());
         assert_eq!(
             got.unwrap(),
             CommandLine {
@@ -1036,7 +1024,6 @@ mod test {
             ":mytarget".to_string(),
         ];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_ok());
         assert_eq!(
             got.unwrap(),
             CommandLine {
@@ -1052,7 +1039,6 @@ mod test {
     fn split_command_line_with_no_command_args() {
         let args = vec!["bazel".to_string(), "build".to_string()];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_ok());
         assert_eq!(
             got.unwrap(),
             CommandLine {
@@ -1068,7 +1054,6 @@ mod test {
     fn split_command_line_with_bazel_help() {
         let args = vec!["bazel".to_string(), "help".to_string()];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_ok());
         assert_eq!(
             got.unwrap(),
             CommandLine {
@@ -1084,7 +1069,6 @@ mod test {
     fn split_command_line_with_bazel_version() {
         let args = vec!["bazel".to_string(), "version".to_string()];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_ok());
         assert_eq!(
             got.unwrap(),
             CommandLine {
@@ -1106,7 +1090,6 @@ mod test {
             ":mytarget".to_string(),
         ];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_ok());
         assert_eq!(
             got.unwrap(),
             CommandLine {
@@ -1126,7 +1109,6 @@ mod test {
     fn split_command_line_with_dash_in_startup_args() {
         let args = vec!["bazel".to_string(), "--".to_string()];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_err());
         assert_eq!(
             got.err().unwrap(),
             String::from(
@@ -1146,7 +1128,6 @@ mod test {
             ":mytarget".to_string(),
         ];
         let got = option_processor().split_command_line(args);
-        assert!(got.is_ok());
         assert_eq!(
             got.unwrap(),
             CommandLine {
