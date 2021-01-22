@@ -98,7 +98,6 @@ extern crate whoami; // FIXME remove this unrelated crate
 extern crate zip;
 
 mod archive_utils;
-mod bazel_startup_options;
 mod bazel_util;
 mod exit_code;
 mod option_processor;

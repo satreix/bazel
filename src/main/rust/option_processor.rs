@@ -203,15 +203,13 @@ impl OptionProcessor {
         // Process the startup options.
         let mut startup_args = Vec::<String>::new();
         let mut i = 1;
-        while i < args.len() && is_arg(&args[1]) {
-            let current_arg = args[1].clone(); // string& current_arg = args[i];
-
-            let is_nullary = self.startup_options.check_valid_nullary(&current_arg)?;
+        while i < args.len() && is_arg(&args[i]) {
+            let current_arg = args[i].clone();
 
             // If the current argument is a valid nullary startup option such as
             // --master_bazelrc or --nomaster_bazelrc proceed to examine the next
             // argument.
-            if is_nullary {
+            if self.startup_options.check_valid_nullary(&current_arg)? {
                 startup_args.push(current_arg);
                 i += 1;
             } else if self.startup_options.is_unary(&current_arg) {
@@ -1134,7 +1132,7 @@ mod test {
                 path_to_binary: "bazel".to_string(),
                 startup_args: vec!["--nomaster_bazelrc".to_string()],
                 command: "build".to_string(),
-                command_args: vec!["--b".to_string(), ":mytarget".to_string()],
+                command_args: vec!["--b".to_string(), "--".to_string(), ":mytarget".to_string()],
             }
         );
     }

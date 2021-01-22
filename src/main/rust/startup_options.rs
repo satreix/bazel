@@ -29,14 +29,14 @@
 // using std::string;
 // using std::vector;
 
-use std::fs;
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::PathBuf;
 
 use crate::bazel_util;
 use crate::exit_code::{Error, ExitCode};
-use chrono::Duration;
 use crate::workspace_layout;
+use chrono::Duration;
 
 type SpecialNullaryFlagHandler = fn(bool);
 
@@ -76,44 +76,6 @@ impl Default for JavabaseType {
     }
 }
 
-/// FIXME StartupOptionsTrait is the base class that is overriden by BazelStartupOptions
-pub trait StartupOptionsTrait {
-    /// Process an ordered list of RcStartupFlags using process_arg.
-    fn process_args(rcstartup_flags: Vec<RcStartupFlag>) -> Result<(), (String, ExitCode)>;
-
-    /// Adds any other options needed to result.
-    ///
-    /// TODO(jmmv): Now that we support site-specific options via subclasses of
-    /// StartupOptions, the "ExtraOptions" concept makes no sense; remove it.
-    fn add_extra_options(result: Vec<String>);
-
-    /// Once startup options have been parsed, warn the user if certain options
-    /// might combine in surprising ways.
-    fn maybe_log_startup_option_warnings() -> bool {
-        // const = 0;
-        false
-    }
-
-    /// Returns the path to the JVM. This should be called after parsing the
-    /// startup options.
-    fn get_jvm() -> PathBuf;
-
-    /// Returns the executable used to start the Blaze server, typically the
-    /// given JVM.
-    fn get_exe(jvm: PathBuf, jar_path: &str) -> PathBuf;
-
-    /// Adds JVM prefix flags to be set.
-    ///
-    /// These will be added before all other JVM flags.
-    fn add_jvm_argument_prefix(javabase: PathBuf, result: Vec<String>);
-
-    /// Adds JVM suffix flags.
-    ///
-    /// These will be added after all other JVM flags, and just before the Bazel
-    /// server startup flags.
-    fn add_jvm_argument_suffix(real_install_dir: PathBuf, jar_path: String, result: Vec<String>);
-}
-
 /// This class defines the startup options accepted by all versions Bazel, and
 /// holds the parsed values. These options and their defaults must be kept in
 /// sync with those in
@@ -129,6 +91,22 @@ pub trait StartupOptionsTrait {
 /// names also don't conform to the style guide.
 #[derive(Clone)]
 pub struct StartupOptions {
+    //  public:
+    //   explicit BazelStartupOptions(const WorkspaceLayout *workspace_layout);
+    //
+    //   void AddExtraOptions(std::vector<std::string> *result) const override;
+    //
+    //   void MaybeLogStartupOptionWarnings() const override;
+    //
+    //  protected:
+    //   std::string GetRcFileBaseName() const override { return ".bazelrc"; }
+    user_bazelrc: String,
+    use_system_rc: bool,
+    use_workspace_rc: bool,
+    use_home_rc: bool,
+    // TODO(b/36168162): Remove the master rc flag.
+    use_master_bazelrc: bool,
+
     //  public:
     //   virtual ~StartupOptions();
 
@@ -316,9 +294,6 @@ pub struct StartupOptions {
     //   virtual blaze_exit_code::ExitCode AddJVMMemoryArguments(const blaze_util::Path &server_javabase, std::vector<std::string> *result, const std::vector<std::string> &user_options, std::string *error) const;
     //
     //   virtual std::string GetRcFileBaseName() const = 0;
-
-    //   // Override the flag name to use in the 'option_sources' map.
-    //   void OverrideOptionSourcesKey(const std::string &flag_name, const std::string &new_name);
     /// The server javabase as provided on the commandline.
     explicit_server_javabase: PathBuf,
 
@@ -362,7 +337,7 @@ impl Default for StartupOptions {
     }
 }
 
-impl StartupOptionsTrait for StartupOptions {
+impl StartupOptions {
     fn process_args(rcstartup_flags: Vec<RcStartupFlag>) -> Result<(), (String, ExitCode)> {
         let i = 0;
         while i < rcstartup_flags.len() {
@@ -391,28 +366,41 @@ impl StartupOptionsTrait for StartupOptions {
         unimplemented!();
     }
 
-    fn add_extra_options(result: Vec<String>) {
-        unimplemented!()
-    }
+    //     /// Process an ordered list of RcStartupFlags using process_arg.
+    //     fn process_args(rcstartup_flags: Vec<RcStartupFlag>) -> Result<(), (String, ExitCode)>;
+    //
+    //     /// Adds any other options needed to result.
+    //     ///
+    //     /// TODO(jmmv): Now that we support site-specific options via subclasses of
+    //     /// StartupOptions, the "ExtraOptions" concept makes no sense; remove it.
+    //     fn add_extra_options(result: Vec<String>);
+    //
+    //     /// Once startup options have been parsed, warn the user if certain options
+    //     /// might combine in surprising ways.
+    //     fn maybe_log_startup_option_warnings() -> bool {
+    //         // const = 0;
+    //         false
+    //     }
+    //
+    //     /// Returns the path to the JVM. This should be called after parsing the
+    //     /// startup options.
+    //     fn get_jvm() -> PathBuf;
+    //
+    //     /// Returns the executable used to start the Blaze server, typically the
+    //     /// given JVM.
+    //     fn get_exe(jvm: PathBuf, jar_path: &str) -> PathBuf;
+    //
+    //     /// Adds JVM prefix flags to be set.
+    //     ///
+    //     /// These will be added before all other JVM flags.
+    //     fn add_jvm_argument_prefix(javabase: PathBuf, result: Vec<String>);
+    //
+    //     /// Adds JVM suffix flags.
+    //     ///
+    //     /// These will be added after all other JVM flags, and just before the Bazel
+    //     /// server startup flags.
+    //     fn add_jvm_argument_suffix(real_install_dir: PathBuf, jar_path: String, result: Vec<String>);
 
-    fn get_jvm() -> PathBuf {
-        unimplemented!()
-    }
-
-    fn get_exe(jvm: PathBuf, jar_path: &str) -> PathBuf {
-        unimplemented!()
-    }
-
-    fn add_jvm_argument_prefix(javabase: PathBuf, result: Vec<String>) {
-        unimplemented!()
-    }
-
-    fn add_jvm_argument_suffix(real_install_dir: PathBuf, jar_path: String, result: Vec<String>) {
-        unimplemented!()
-    }
-}
-
-impl StartupOptions {
     /// Register a nullary startup flag.
     /// Both '--flag_name' and '--noflag_name' will be registered as valid nullary
     /// flags. 'value' is the pointer to the boolean that will receive the flag's
@@ -450,12 +438,19 @@ impl StartupOptions {
         self.valid_unary_startup_flags.insert(format!("--{}", name));
     }
 
-    // void StartupOptions::OverrideOptionSourcesKey(const std::string &flag_name, const std::string &new_name) {
-    //   option_sources_key_override_[flag_name] = new_name;
-    // }
+    /// Override the flag name to use in the 'option_sources' map.
+    fn override_option_sources_key(&mut self, name: &str, new_name: &str) {
+        self.option_sources_key_override
+            .insert(name.to_owned(), new_name.to_owned());
+    }
 
     pub fn new(product_name: String) -> Self {
         let mut ret = Self {
+            user_bazelrc: "".to_string(),
+            use_system_rc: true,
+            use_workspace_rc: true,
+            use_home_rc: true,
+            use_master_bazelrc: true,
             product_name,
             server_jvm_out: None,
             failure_detail_out: None,
@@ -511,13 +506,23 @@ impl StartupOptions {
 
         if bazel_util::is_running_within_test() {
             let test_temp_dir = PathBuf::from(std::env::var("TEST_TMPDIR").unwrap());
-            ret.output_root = fs::canonicalize(&test_temp_dir).unwrap().to_str().unwrap().to_owned();
+            ret.output_root = fs::canonicalize(&test_temp_dir)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_owned();
             ret.max_idle = Duration::seconds(15);
             // FIXME BAZEL_LOG(USER) the following
-            println!("$TEST_TMPDIR defined: output root is '{}' and max_idle default is '{:?}'.", ret.output_root, ret.max_idle);
+            println!(
+                "$TEST_TMPDIR defined: output root is '{}' and max_idle default is '{:?}'.",
+                ret.output_root, ret.max_idle
+            );
         } else {
             // FIXME BAZEL_LOG(INFO) the following
-            println!("output root is '{}' and max_idle default is '{:?}'.", ret.output_root, ret.max_idle);
+            println!(
+                "output root is '{}' and max_idle default is '{:?}'.",
+                ret.output_root, ret.max_idle
+            );
         };
 
         // #if defined(_WIN32) || defined(__CYGWIN__)
@@ -588,6 +593,12 @@ impl StartupOptions {
         ret.register_unary_startup_flag("output_user_root");
         ret.register_unary_startup_flag("server_jvm_out");
         ret.register_unary_startup_flag("failure_detail_out");
+        ret.register_nullary_startup_flag_no_rc("home_rc", Some(ret.use_home_rc));
+        ret.register_nullary_startup_flag_no_rc("master_bazelrc", Some(ret.use_master_bazelrc));
+        ret.override_option_sources_key("master_bazelrc", "blazerc");
+        ret.register_nullary_startup_flag_no_rc("system_rc", Some(ret.use_system_rc));
+        ret.register_nullary_startup_flag_no_rc("workspace_rc", Some(ret.use_workspace_rc));
+        ret.register_unary_startup_flag("bazelrc");
 
         ret
     }
@@ -599,20 +610,9 @@ impl StartupOptions {
     /// Checks whether the argument is a valid unary option.
     /// E.g. --blazerc=foo, --blazerc foo.
     pub fn is_unary(&self, arg: &str) -> bool {
-
-
-        println!("is_unary: valid_unary_startup_flags: {:?}", self.valid_unary_startup_flags);
-
         match arg.find('=') {
-            None => {
-                println!("is_unary: arg: {:?}", arg);
-                self.valid_unary_startup_flags.contains(arg)
-            },
-            Some(a) => {
-                let aa = &arg[0..a];
-                println!("is_unary: aa: {:?}", aa);
-                self.valid_unary_startup_flags.contains(aa)
-            },
+            None => self.valid_unary_startup_flags.contains(arg),
+            Some(a) => self.valid_unary_startup_flags.contains(&arg[0..a]),
         }
     }
 

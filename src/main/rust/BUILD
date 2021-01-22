@@ -10,7 +10,6 @@ rust_library(
     name = "bazel",
     srcs = [
         "archive_utils.rs",
-        "bazel_startup_options.rs",
         "bazel_util.rs",
         "exit_code.rs",
         "lib.rs",
@@ -34,6 +33,7 @@ rust_library(
 
 rust_test(
     name = "bazel_test",
+    size = "small",
     crate = ":bazel",
     data = glob(["testdata/**"]),
 )
