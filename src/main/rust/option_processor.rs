@@ -888,7 +888,10 @@ mod test {
     }
 
     fn option_processor() -> OptionProcessor {
-        OptionProcessor::new(logger(), StartupOptions::new(String::from("Bazel")))
+        OptionProcessor::new(
+            logger(),
+            StartupOptions::new(String::from("Bazel"), Some(logger())),
+        )
     }
 
     #[test]

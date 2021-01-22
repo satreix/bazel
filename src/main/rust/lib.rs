@@ -87,7 +87,7 @@
 //!   connections. It would also not be resilient against a dead server that
 //!   left a PID file around.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 extern crate chrono;
 extern crate dirs;
@@ -111,6 +111,7 @@ pub use crate::option_processor::OptionProcessor;
 use crate::server_process_info::ServerProcessInfo;
 pub use crate::startup_options::StartupOptions;
 use chrono::Duration;
+use std::sync::Mutex;
 
 extern crate command_server_rust_proto;
 
@@ -272,16 +273,10 @@ struct BazelServer {
     logger: slog::Logger,
 
     //   BlazeLock blaze_lock_;
-
-    //   std::unique_ptr<CommandServer::Stub> client_;
+    client: Option<Box<dyn command_server_rust_proto::CommandServer>>,
     request_cookie: String,
     response_cookie: String,
-    command_id: String,
-
-    /// protects command_id_ . Although we always set it before making the cancel
-    /// thread do something with it, the mutex is still useful because it provides
-    /// a memory fence.
-    //   std::mutex cancel_thread_mutex_;
+    command_id: Mutex<String>,
 
     /// Pipe that the main thread sends actions to and the cancel thread receives
     /// actions from.
@@ -296,26 +291,16 @@ struct BazelServer {
 
 impl BazelServer {
     pub fn new(logger: slog::Logger, startup_options: StartupOptions) -> Self {
-        // BazelServer::BazelServer(const StartupOptions &startup_options)
-        //     : process_info_(startup_options.output_base, startup_options.server_jvm_out),
-        //       connect_timeout_secs_(startup_options.connect_timeout_secs),
-        //       batch_(startup_options.batch),
-        //       block_for_lock_(startup_options.block_for_lock),
-        //       preemptible_(startup_options.preemptible),
-        //       output_base_(startup_options.output_base) {
-
         let ret = Self {
             logger,
+            client: None,
             request_cookie: "".to_string(),
             response_cookie: "".to_string(),
-            command_id: "".to_string(),
-
-            // process_info_(startup_options.output_base, startup_options.server_jvm_out)
+            command_id: Mutex::new("".to_string()),
             process_info: ServerProcessInfo::new(
-                startup_options.output_base.to_str().unwrap(),
-                startup_options.server_jvm_out.unwrap().as_str(),
+                startup_options.output_base,
+                startup_options.server_jvm_out,
             ),
-
             connect_timeout: startup_options.connect_timeout,
             batch: false,
             block_for_lock: false,
@@ -323,10 +308,10 @@ impl BazelServer {
             output_base: "".to_string(),
         };
 
-        //   if (!startup_options.client_debug) {
-        //     gpr_set_log_function(null_grpc_log_function);
-        //   }
-        //
+        if !startup_options.client_debug {
+            //     gpr_set_log_function(null_grpc_log_function);
+        }
+
         //   pipe_.reset(blaze_util::CreatePipe());
         //   if (!pipe_) {
         //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
@@ -360,25 +345,24 @@ impl BazelServer {
     fn try_connect(self) -> bool {
         // bool BazelServer::try_connect(CommandServer::Stub *client) {
 
-        //   grpc::ClientContext context;
-        //   context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(connect_timeout_secs_));
+        // grpc::ClientContext context;
+        // context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(connect_timeout_secs_));
 
-        //   command_server::PingRequest request;
-        //   command_server::PingResponse response;
-        //   request.set_cookie(request_cookie_);
+        // command_server::PingRequest request;
+        // command_server::PingResponse response;
+        // request.set_cookie(request_cookie_);
 
         info!(
             self.logger,
             "Trying to connect to server...";
             "timeout" => format!("{:?}", self.connect_timeout),
         );
-        //   grpc::Status status = client->Ping(&context, request, &response);
+        // grpc::Status status = client->Ping(&context, request, &response);
         //
-        //   if (!status.ok() || !ProtoStringEqual(response.cookie(), response_cookie_)) {
-        //     BAZEL_LOG(INFO) << "Connection to server failed: (" << status.error_code()
-        //                     << ") " << status.error_message().c_str() << "\n";
-        //     return false;
-        //   }
+        // if (!status.ok() || !ProtoStringEqual(response.cookie(), response_cookie_)) {
+        //   BAZEL_LOG(INFO) << "Connection to server failed: (" << status.error_code() << ") " << status.error_message().c_str() << "\n";
+        //   return false;
+        // }
 
         true
     }
@@ -389,60 +373,60 @@ impl BazelServer {
     fn connect() -> bool {
         // bool BazelServer::Connect() {
 
-        //   assert(!Connected());
+        // assert(!Connected());
         //
-        //   blaze_util::Path server_dir = output_base_.GetRelative("server");
-        //   std::string port;
-        //   std::string ipv4_prefix = "127.0.0.1:";
-        //   std::string ipv6_prefix_1 = "[0:0:0:0:0:0:0:1]:";
-        //   std::string ipv6_prefix_2 = "[::1]:";
+        // blaze_util::Path server_dir = output_base_.GetRelative("server");
+        // std::string port;
+        // std::string ipv4_prefix = "127.0.0.1:";
+        // std::string ipv6_prefix_1 = "[0:0:0:0:0:0:0:1]:";
+        // std::string ipv6_prefix_2 = "[::1]:";
         //
-        //   if (!blaze_util::ReadFile(server_dir.GetRelative("command_port"), &port)) {
-        //     return false;
-        //   }
+        // if (!blaze_util::ReadFile(server_dir.GetRelative("command_port"), &port)) {
+        //   return false;
+        // }
         //
-        //   // Make sure that we are being directed to localhost
-        //   if (port.compare(0, ipv4_prefix.size(), ipv4_prefix) &&
-        //       port.compare(0, ipv6_prefix_1.size(), ipv6_prefix_1) &&
-        //       port.compare(0, ipv6_prefix_2.size(), ipv6_prefix_2)) {
-        //     return false;
-        //   }
+        // // Make sure that we are being directed to localhost
+        // if (port.compare(0, ipv4_prefix.size(), ipv4_prefix) &&
+        //     port.compare(0, ipv6_prefix_1.size(), ipv6_prefix_1) &&
+        //     port.compare(0, ipv6_prefix_2.size(), ipv6_prefix_2)) {
+        //   return false;
+        // }
         //
-        //   if (!blaze_util::ReadFile(server_dir.GetRelative("request_cookie"),
-        //                             &request_cookie_)) {
-        //     return false;
-        //   }
+        // if (!blaze_util::ReadFile(server_dir.GetRelative("request_cookie"),
+        //                           &request_cookie_)) {
+        //   return false;
+        // }
         //
-        //   if (!blaze_util::ReadFile(server_dir.GetRelative("response_cookie"),
-        //                             &response_cookie_)) {
-        //     return false;
-        //   }
+        // if (!blaze_util::ReadFile(server_dir.GetRelative("response_cookie"),
+        //                           &response_cookie_)) {
+        //   return false;
+        // }
         //
-        //   pid_t server_pid = get_server_pid(blaze_util::Path(server_dir));
-        //   if (server_pid < 0) {
-        //     return false;
-        //   }
+        // pid_t server_pid = get_server_pid(blaze_util::Path(server_dir));
+        // if (server_pid < 0) {
+        //   return false;
+        // }
         //
-        //   if (!VerifyServerProcess(server_pid, output_base_)) {
-        //     return false;
-        //   }
+        // if (!VerifyServerProcess(server_pid, output_base_)) {
+        //   return false;
+        // }
         //
-        //   grpc::ChannelArguments channel_args;
-        //   // Bazel client and server always run on the same machine and communicate
-        //   // locally over gRPC; so we want to ignore any configured proxies when setting
-        //   // up a gRPC channel to the server.
-        //   channel_args.SetInt(GRPC_ARG_ENABLE_HTTP_PROXY, 0);
-        //   std::shared_ptr<grpc::Channel> channel(grpc::CreateCustomChannel(
-        //       port, grpc::InsecureChannelCredentials(), channel_args));
-        //   std::unique_ptr<CommandServer::Stub> client(CommandServer::NewStub(channel));
+        // grpc::ChannelArguments channel_args;
+        // // Bazel client and server always run on the same machine and communicate
+        // // locally over gRPC; so we want to ignore any configured proxies when setting
+        // // up a gRPC channel to the server.
+        // channel_args.SetInt(GRPC_ARG_ENABLE_HTTP_PROXY, 0);
+        // std::shared_ptr<grpc::Channel> channel(grpc::CreateCustomChannel(
+        //     port, grpc::InsecureChannelCredentials(), channel_args));
+        // std::unique_ptr<CommandServer::Stub> client(CommandServer::NewStub(channel));
         //
-        //   if (!try_connect(client.get())) {
-        //     return false;
-        //   }
+        // if (!try_connect(client.get())) {
+        //   return false;
+        // }
         //
-        //   this->client_ = std::move(client);
-        //   process_info_.server_pid_ = server_pid;
-        //   return true;
+        // this->client_ = std::move(client);
+        // process_info_.server_pid_ = server_pid;
+        // return true;
         unimplemented!();
     }
 
@@ -477,64 +461,63 @@ impl BazelServer {
     /// Ctrl-C still counts as a SIGINT, three of which result in a SIGKILL being
     /// delivered to the server)
     fn cancel_thread() {
-        //   bool running = true;
-        //   bool cancel = false;
-        //   bool command_id_received = false;
-        //   while (running) {
-        //     char buf;
+        // bool running = true;
+        // bool cancel = false;
+        // bool command_id_received = false;
+        // while (running) {
+        //   char buf;
         //
-        //     int error;
-        //     int bytes_read = pipe_->Receive(&buf, 1, &error);
-        //     if (bytes_read < 0 && error == blaze_util::IPipe::INTERRUPTED) {
-        //       continue;
-        //     } else if (bytes_read != 1) {
-        //       BAZEL_DIE(blaze_exit_code::InternalError)
-        //           << "Cannot communicate with cancel thread: " << GetLastErrorString();
-        //     }
-        //
-        //     switch (buf) {
-        //       case CancelThreadAction::NOTHING:
-        //         break;
-        //
-        //       case CancelThreadAction::JOIN:
-        //         running = false;
-        //         break;
-        //
-        //       case CancelThreadAction::COMMAND_ID_RECEIVED:
-        //         command_id_received = true;
-        //         if (cancel) {
-        //           send_cancel_message();
-        //           cancel = false;
-        //         }
-        //         break;
-        //
-        //       case CancelThreadAction::CANCEL:
-        //         if (command_id_received) {
-        //           send_cancel_message();
-        //         } else {
-        //           cancel = true;
-        //         }
-        //         break;
-        //     }
+        //   int error;
+        //   int bytes_read = pipe_->Receive(&buf, 1, &error);
+        //   if (bytes_read < 0 && error == blaze_util::IPipe::INTERRUPTED) {
+        //     continue;
+        //   } else if (bytes_read != 1) {
+        //     BAZEL_DIE(blaze_exit_code::InternalError)
+        //         << "Cannot communicate with cancel thread: " << GetLastErrorString();
         //   }
+        //
+        //   switch (buf) {
+        //     case CancelThreadAction::NOTHING:
+        //       break;
+        //
+        //     case CancelThreadAction::JOIN:
+        //       running = false;
+        //       break;
+        //
+        //     case CancelThreadAction::COMMAND_ID_RECEIVED:
+        //       command_id_received = true;
+        //       if (cancel) {
+        //         send_cancel_message();
+        //         cancel = false;
+        //       }
+        //       break;
+        //
+        //     case CancelThreadAction::CANCEL:
+        //       if (command_id_received) {
+        //         send_cancel_message();
+        //       } else {
+        //         cancel = true;
+        //       }
+        //       break;
+        //   }
+        // }
     }
 
     fn send_cancel_message() {
-        //   std::unique_lock<std::mutex> lock(cancel_thread_mutex_);
+        // std::unique_lock<std::mutex> lock(cancel_thread_mutex_);
         //
-        //   command_server::CancelRequest request;
-        //   request.set_cookie(request_cookie_);
-        //   request.set_command_id(command_id_);
-        //   grpc::ClientContext context;
-        //   context.set_deadline(std::chrono::system_clock::now() +
-        //                        std::chrono::seconds(10));
-        //   command_server::CancelResponse response;
-        //   // There isn't a lot we can do if this request fails
-        //   grpc::Status status = client_->Cancel(&context, request, &response);
-        //   if (!status.ok()) {
-        //     BAZEL_LOG(USER) << "\nCould not interrupt server: (" << status.error_code()
-        //                     << ") " << status.error_message().c_str() << "\n";
-        //   }
+        // command_server::CancelRequest request;
+        // request.set_cookie(request_cookie_);
+        // request.set_command_id(command_id_);
+        // grpc::ClientContext context;
+        // context.set_deadline(std::chrono::system_clock::now() +
+        //                      std::chrono::seconds(10));
+        // command_server::CancelResponse response;
+        // // There isn't a lot we can do if this request fails
+        // grpc::Status status = client_->Cancel(&context, request, &response);
+        // if (!status.ok()) {
+        //   BAZEL_LOG(USER) << "\nCould not interrupt server: (" << status.error_code() << ") " << status.error_message().c_str() << "\n";
+        // }
     }
 
     /// Disconnects and kills an existing server. Only call this when this object
@@ -542,71 +525,71 @@ impl BazelServer {
     ///
     /// This will wait indefinitely until the server shuts down
     fn kill_running_server() {
-        //   assert(Connected());
+        // assert(Connected());
         //
-        //   std::unique_ptr<grpc::ClientContext> context(new grpc::ClientContext);
-        //   command_server::RunRequest request;
-        //   command_server::RunResponse response;
-        //   request.set_cookie(request_cookie_);
-        //   request.set_block_for_lock(block_for_lock_);
-        //   request.set_client_description("pid=" + blaze::GetProcessIdAsString() +
-        //                                  " (for shutdown)");
-        //   request.add_arg("shutdown");
-        //   BAZEL_LOG(INFO) << "Shutting running server with RPC request";
-        //   std::unique_ptr<grpc::ClientReader<command_server::RunResponse>> reader(
-        //       client_->Run(context.get(), request));
+        // std::unique_ptr<grpc::ClientContext> context(new grpc::ClientContext);
+        // command_server::RunRequest request;
+        // command_server::RunResponse response;
+        // request.set_cookie(request_cookie_);
+        // request.set_block_for_lock(block_for_lock_);
+        // request.set_client_description("pid=" + blaze::GetProcessIdAsString() +
+        //                                " (for shutdown)");
+        // request.add_arg("shutdown");
+        // BAZEL_LOG(INFO) << "Shutting running server with RPC request";
+        // std::unique_ptr<grpc::ClientReader<command_server::RunResponse>> reader(
+        //     client_->Run(context.get(), request));
         //
-        //   // TODO(b/111179585): Swallowing these responses loses potential messages from
-        //   // the server, which may be useful in understanding why a shutdown failed.
-        //   // However, we don't want to spam the user in case the shutdown works
-        //   // perfectly fine, so we discard the information. For --noblock_for_lock, this
-        //   // means that we don't output the PID of the competing client, which isn't
-        //   // great. We could either store the stderr_output returned by the server and
-        //   // output it in the case of a failed shutdown, or we could add a
-        //   // special-cased field in RunResponse for this purpose.
-        //   while (reader->Read(&response)) {
-        //   }
+        // // TODO(b/111179585): Swallowing these responses loses potential messages from
+        // // the server, which may be useful in understanding why a shutdown failed.
+        // // However, we don't want to spam the user in case the shutdown works
+        // // perfectly fine, so we discard the information. For --noblock_for_lock, this
+        // // means that we don't output the PID of the competing client, which isn't
+        // // great. We could either store the stderr_output returned by the server and
+        // // output it in the case of a failed shutdown, or we could add a
+        // // special-cased field in RunResponse for this purpose.
+        // while (reader->Read(&response)) {
+        // }
         //
-        //   grpc::Status status = reader->Finish();
-        //   reader.reset();
-        //   context.reset();  // necessary for destroying client_ below to be effective
-        //   if (status.ok()) {
-        //     // Check the final message from the server to see if it exited because
-        //     // another command holds the client lock.
-        //     if (response.finished()) {
-        //       if (response.exit_code() == blaze_exit_code::LockHeldNoblockForLock) {
-        //         assert(!block_for_lock_);
-        //         BAZEL_DIE(blaze_exit_code::LockHeldNoblockForLock)
-        //             << "Exiting because the lock is held and --noblock_for_lock was "
-        //                "given.";
-        //       }
+        // grpc::Status status = reader->Finish();
+        // reader.reset();
+        // context.reset();  // necessary for destroying client_ below to be effective
+        // if (status.ok()) {
+        //   // Check the final message from the server to see if it exited because
+        //   // another command holds the client lock.
+        //   if (response.finished()) {
+        //     if (response.exit_code() == blaze_exit_code::LockHeldNoblockForLock) {
+        //       assert(!block_for_lock_);
+        //       BAZEL_DIE(blaze_exit_code::LockHeldNoblockForLock)
+        //           << "Exiting because the lock is held and --noblock_for_lock was "
+        //              "given.";
         //     }
-        //
-        //     // If for any reason the shutdown request failed to initiate a termination,
-        //     // this is a bug. Yes, this means the server won't be forced to shut down,
-        //     // which might be the preferred behavior, but it will help identify the bug.
-        //     assert(response.termination_expected());
         //   }
         //
-        //   // Eagerly disconnect to let the server stop promptly.  Otherwise it may
-        //   // wait $GRPC_CLIENT_CHANNEL_BACKUP_POLL_INTERVAL_MS until we go away.
-        //   // See http://b/143860035.
-        //   client_.reset();
+        //   // If for any reason the shutdown request failed to initiate a termination,
+        //   // this is a bug. Yes, this means the server won't be forced to shut down,
+        //   // which might be the preferred behavior, but it will help identify the bug.
+        //   assert(response.termination_expected());
+        // }
         //
-        //   // Wait for the server process to terminate (if we know the server PID).
-        //   // If it does not terminate itself gracefully within 1m, terminate it.
-        //   if (process_info_.server_pid_ > 0 &&
-        //       !await_server_process_termination(process_info_.server_pid_, output_base_,
-        //                                      kPostShutdownGracePeriodSeconds)) {
-        //     if (!status.ok()) {
-        //       BAZEL_LOG(WARNING)
-        //           << "Shutdown request failed, server still alive: (error code: "
-        //           << status.error_code() << ", error message: '"
-        //           << status.error_message() << "', log file: '"
-        //           << process_info_.jvm_log_file_.AsPrintablePath() << "')";
-        //     }
-        //     KillServerProcess(process_info_.server_pid_, output_base_);
+        // // Eagerly disconnect to let the server stop promptly.  Otherwise it may
+        // // wait $GRPC_CLIENT_CHANNEL_BACKUP_POLL_INTERVAL_MS until we go away.
+        // // See http://b/143860035.
+        // client_.reset();
+        //
+        // // Wait for the server process to terminate (if we know the server PID).
+        // // If it does not terminate itself gracefully within 1m, terminate it.
+        // if (process_info_.server_pid_ > 0 &&
+        //     !await_server_process_termination(process_info_.server_pid_, output_base_,
+        //                                    kPostShutdownGracePeriodSeconds)) {
+        //   if (!status.ok()) {
+        //     BAZEL_LOG(WARNING)
+        //         << "Shutdown request failed, server still alive: (error code: "
+        //         << status.error_code() << ", error message: '"
+        //         << status.error_message() << "', log file: '"
+        //         << process_info_.jvm_log_file_.AsPrintablePath() << "')";
         //   }
+        //   KillServerProcess(process_info_.server_pid_, output_base_);
+        // }
     }
 
     /// Send the command line to the server and forward whatever it says to stdout
@@ -617,190 +600,188 @@ impl BazelServer {
         command: &str, //     const string &command,
         command_args: Vec<&str>, //const vector<string> &command_args,
 
-                       //     const string &invocation_policy,
-                       //     const vector<RcStartupFlag> &original_startup_options,
-                       //     const LoggingInfo &logging_info,
-                       //     const DurationMillis client_startup_duration,
-                       //     const DurationMillis extract_data_duration,
-                       //     const DurationMillis command_wait_duration_ms
+                       // const string &invocation_policy,
+                       // const vector<RcStartupFlag> &original_startup_options,
+                       // const LoggingInfo &logging_info,
+                       // const DurationMillis client_startup_duration,
+                       // const DurationMillis extract_data_duration,
+                       // const DurationMillis command_wait_duration_ms
     ) -> Result<(), ExitCode> {
         // unsigned int BazelServer::Communicate(@@ARGS@@) {
 
-        //   assert(Connected());
-        //   assert(process_info_.server_pid_ > 0);
+        // assert(Connected());
+        // assert(process_info_.server_pid_ > 0);
         //
-        //   vector<string> arg_vector;
-        //   if (!command.empty()) {
-        //     arg_vector.push_back(command);
-        //     add_logging_args(logging_info, client_startup_duration, extract_data_duration, command_wait_duration_ms, &arg_vector);
-        //   }
+        // vector<string> arg_vector;
+        // if (!command.empty()) {
+        //   arg_vector.push_back(command);
+        //   add_logging_args(logging_info, client_startup_duration, extract_data_duration, command_wait_duration_ms, &arg_vector);
+        // }
         //
-        //   arg_vector.insert(arg_vector.end(), command_args.begin(), command_args.end());
+        // arg_vector.insert(arg_vector.end(), command_args.begin(), command_args.end());
 
-        //   command_server::RunRequest request;
+        // command_server::RunRequest request;
         let mut request = command_server_rust_proto::RunRequest::new();
 
         // FIXME hardcode value from
         request.set_cookie(String::from("e582cb9b207376291824f7729f212b")); //   request.set_cookie(request_cookie_);
 
-        //   request.set_block_for_lock(block_for_lock_);
+        // request.set_block_for_lock(block_for_lock_);
         request.set_preemptible(self.preemptible); //   request.set_preemptible(preemptible_);
         request.set_client_description(format!("pid={}", std::process::id())); //   request.set_client_description("pid=" + blaze::GetProcessIdAsString());
 
-        //   for (const string &arg : arg_vector) {
-        //     request.add_arg(arg);
-        //   }
-        //   if (!invocation_policy.empty()) {
-        //     request.set_invocation_policy(invocation_policy);
-        //   }
-        //
-        //   for (const auto &startup_option : original_startup_options) {
-        //     command_server::StartupOption *proto_option_field = request.add_startup_options();
-        //     request.add_startup_options();
-        //     proto_option_field->set_source(startup_option.source);
-        //     proto_option_field->set_option(startup_option.value);
-        //   }
+        // for (const string &arg : arg_vector) {
+        //   request.add_arg(arg);
+        // }
+        // if (!invocation_policy.empty()) {
+        //   request.set_invocation_policy(invocation_policy);
+        // }
+
+        // for (const auto &startup_option : original_startup_options) {
+        //   command_server::StartupOption *proto_option_field = request.add_startup_options();
+        //   request.add_startup_options();
+        //   proto_option_field->set_source(startup_option.source);
+        //   proto_option_field->set_option(startup_option.value);
+        // }
 
         debug!(self.logger, "Built request"; "request" => format!("{:?}", request));
 
-        //   std::unique_ptr<grpc::ClientContext> context(new grpc::ClientContext);
-        //   command_server::RunResponse response;
-        //   std::unique_ptr<grpc::ClientReader<command_server::RunResponse>> reader(client_->Run(context.get(), request));
+        // std::unique_ptr<grpc::ClientContext> context(new grpc::ClientContext);
+        // command_server::RunResponse response;
+        // std::unique_ptr<grpc::ClientReader<command_server::RunResponse>> reader(client_->Run(context.get(), request));
 
-        //   // Release the server lock because the gRPC handles concurrent clients just
-        //   // fine. Note that this may result in two "waiting for other client" messages
-        //   // (one during server startup and one emitted by the server)
-
+        // Release the server lock because the gRPC handles concurrent clients just
+        // fine. Note that this may result in two "waiting for other client" messages
+        // (one during server startup and one emitted by the server)
         info!(
             self.logger,
             "Releasing client lock, let the server manage concurrent requests."
         );
-        //   BAZEL_LOG(INFO) << "Releasing client lock, let the server manage concurrent requests.";
-        //   blaze::ReleaseLock(&blaze_lock_);
+        // BAZEL_LOG(INFO) << "Releasing client lock, let the server manage concurrent requests.";
+        // blaze::ReleaseLock(&blaze_lock_);
 
-        //   std::thread cancel_thread(&BazelServer::CancelThread, this);
-        //   bool command_id_set = false;
-        //   bool pipe_broken = false;
-        //   command_server::RunResponse final_response;
-        //   bool finished = false;
-        //   bool finished_warning_emitted = false;
+        // std::thread cancel_thread(&BazelServer::CancelThread, this);
+        // bool command_id_set = false;
+        // bool pipe_broken = false;
+        // command_server::RunResponse final_response;
+        // bool finished = false;
+        // bool finished_warning_emitted = false;
 
-        //   while (reader->Read(&response)) {
-        //     if (finished && !finished_warning_emitted) {
-        //       BAZEL_LOG(USER) << "\nServer returned messages after reporting exit code";
-        //       finished_warning_emitted = true;
-        //     }
+        // while (reader->Read(&response)) {
+        //   if (finished && !finished_warning_emitted) {
+        //     BAZEL_LOG(USER) << "\nServer returned messages after reporting exit code";
+        //     finished_warning_emitted = true;
+        //   }
         //
-        //     if (!ProtoStringEqual(response.cookie(), response_cookie_)) {
-        //       BAZEL_LOG(USER) << "\nServer response cookie invalid, exiting";
-        //       return blaze_exit_code::InternalError;
-        //     }
+        //   if (!ProtoStringEqual(response.cookie(), response_cookie_)) {
+        //     BAZEL_LOG(USER) << "\nServer response cookie invalid, exiting";
+        //     return blaze_exit_code::InternalError;
+        //   }
         //
-        //     const char *broken_pipe_name = nullptr;
+        //   const char *broken_pipe_name = nullptr;
         //
-        //     if (response.finished()) {
-        //       final_response = response;
-        //       finished = true;
-        //     }
+        //   if (response.finished()) {
+        //     final_response = response;
+        //     finished = true;
+        //   }
         //
-        //     if (!response.standard_output().empty()) {
-        //       size_t size = response.standard_output().size();
-        //       if (blaze_util::WriteToStdOutErr(response.standard_output().c_str(), size,
-        //                                        /* to_stdout */ true) ==
-        //           blaze_util::WriteResult::BROKEN_PIPE) {
-        //         broken_pipe_name = "standard output";
-        //       }
-        //     }
-        //
-        //     if (!response.standard_error().empty()) {
-        //       size_t size = response.standard_error().size();
-        //       if (blaze_util::WriteToStdOutErr(response.standard_error().c_str(), size,
-        //                                        /* to_stdout */ false) ==
-        //           blaze_util::WriteResult::BROKEN_PIPE) {
-        //         broken_pipe_name = "standard error";
-        //       }
-        //     }
-        //
-        //     if (broken_pipe_name != nullptr && !pipe_broken) {
-        //       pipe_broken = true;
-        //       BAZEL_LOG(USER) << "\nCannot write to " << broken_pipe_name
-        //                       << "; exiting...\n";
-        //       Cancel();
-        //     }
-        //
-        //     if (!command_id_set && !response.command_id().empty()) {
-        //       std::unique_lock<std::mutex> lock(cancel_thread_mutex_);
-        //       command_id_ = response.command_id();
-        //       command_id_set = true;
-        //       send_action(CancelThreadAction::COMMAND_ID_RECEIVED);
+        //   if (!response.standard_output().empty()) {
+        //     size_t size = response.standard_output().size();
+        //     if (blaze_util::WriteToStdOutErr(response.standard_output().c_str(), size,
+        //                                      /* to_stdout */ true) ==
+        //         blaze_util::WriteResult::BROKEN_PIPE) {
+        //       broken_pipe_name = "standard output";
         //     }
         //   }
-
-        //   grpc::Status status = reader->Finish();
-        //   reader.reset();
-        //   context.reset();  // necessary for destroying client_ below to be effective
-
-        //   // If the server claims it is shutting down (eg the command was "shutdown"),
-        //   // wait for it to exit.
-        //   if (final_response.termination_expected()) {
-        //     // Eagerly disconnect to let the server stop promptly.  Otherwise it may
-        //     // wait $GRPC_CLIENT_CHANNEL_BACKUP_POLL_INTERVAL_MS until we go away.
-        //     // See http://b/143860035.
-        //     client_.reset();
-        //     if (!await_server_process_termination(process_info_.server_pid_, output_base_,
-        //                                        kPostShutdownGracePeriodSeconds)) {
-        //       KillServerProcess(process_info_.server_pid_, output_base_);
+        //
+        //   if (!response.standard_error().empty()) {
+        //     size_t size = response.standard_error().size();
+        //     if (blaze_util::WriteToStdOutErr(response.standard_error().c_str(), size,
+        //                                      /* to_stdout */ false) ==
+        //         blaze_util::WriteResult::BROKEN_PIPE) {
+        //       broken_pipe_name = "standard error";
         //     }
         //   }
+        //
+        //   if (broken_pipe_name != nullptr && !pipe_broken) {
+        //     pipe_broken = true;
+        //     BAZEL_LOG(USER) << "\nCannot write to " << broken_pipe_name
+        //                     << "; exiting...\n";
+        //     Cancel();
+        //   }
+        //
+        //   if (!command_id_set && !response.command_id().empty()) {
+        //     std::unique_lock<std::mutex> lock(cancel_thread_mutex_);
+        //     command_id_ = response.command_id();
+        //     command_id_set = true;
+        //     send_action(CancelThreadAction::COMMAND_ID_RECEIVED);
+        //   }
+        // }
 
-        //   send_action(CancelThreadAction::JOIN);
-        //   cancel_thread.join();
+        // grpc::Status status = reader->Finish();
+        // reader.reset();
+        // context.reset();  // necessary for destroying client_ below to be effective
 
-        //   if (!status.ok()) {
-        //     BAZEL_LOG(USER) << "\nServer terminated abruptly (error code: "
-        //                     << status.error_code() << ", error message: '"
-        //                     << status.error_message() << "', log file: '"
-        //                     << process_info_.jvm_log_file_.AsPrintablePath() << "')\n";
-        //     return GetExitCodeForAbruptExit(output_base_);
-        //   } else if (!finished) {
+        // If the server claims it is shutting down (eg the command was "shutdown"),
+        // wait for it to exit.
+        // if (final_response.termination_expected()) {
+        //   // Eagerly disconnect to let the server stop promptly.  Otherwise it may
+        //   // wait $GRPC_CLIENT_CHANNEL_BACKUP_POLL_INTERVAL_MS until we go away.
+        //   // See http://b/143860035.
+        //   client_.reset();
+        //   if (!await_server_process_termination(process_info_.server_pid_, output_base_,
+        //                                      kPostShutdownGracePeriodSeconds)) {
+        //     KillServerProcess(process_info_.server_pid_, output_base_);
+        //   }
+        // }
+
+        // send_action(CancelThreadAction::JOIN);
+        // cancel_thread.join();
+
+        // if (!status.ok()) {
+        //   BAZEL_LOG(USER) << "\nServer terminated abruptly (error code: "
+        //                   << status.error_code() << ", error message: '"
+        //                   << status.error_message() << "', log file: '"
+        //                   << process_info_.jvm_log_file_.AsPrintablePath() << "')\n";
+        //   return GetExitCodeForAbruptExit(output_base_);
+        // } else if (!finished) {
+        //   BAZEL_LOG(USER)
+        //       << "\nServer finished RPC without an explicit exit code (log file: '"
+        //       << process_info_.jvm_log_file_.AsPrintablePath() << "')\n";
+        //   return GetExitCodeForAbruptExit(output_base_);
+        // } else if (final_response.has_exec_request()) {
+        //   const command_server::ExecRequest &request = final_response.exec_request();
+        //   if (request.argv_size() < 1) {
         //     BAZEL_LOG(USER)
-        //         << "\nServer finished RPC without an explicit exit code (log file: '"
-        //         << process_info_.jvm_log_file_.AsPrintablePath() << "')\n";
-        //     return GetExitCodeForAbruptExit(output_base_);
-        //   } else if (final_response.has_exec_request()) {
-        //     const command_server::ExecRequest &request = final_response.exec_request();
-        //     if (request.argv_size() < 1) {
-        //       BAZEL_LOG(USER)
-        //           << "\nServer requested exec() but did not pass a binary to execute\n";
-        //       return blaze_exit_code::InternalError;
-        //     }
-        //
-        //     vector<string> argv(request.argv().begin(), request.argv().end());
-        //     for (const auto &variable : request.environment_variable()) {
-        //       SetEnv(variable.name(), variable.value());
-        //     }
-        //
-        //     if (!blaze_util::ChangeDirectory(request.working_directory())) {
-        //       BAZEL_DIE(blaze_exit_code::InternalError)
-        //           << "changing directory into " << request.working_directory()
-        //           << " failed: " << GetLastErrorString();
-        //     }
-        //
-        //     // Execute the requested program, but before doing so, flush everything
-        //     // we still have to say.
-        //     fflush(NULL);
-        //     ExecuteRunRequest(blaze_util::Path(request.argv(0)), argv);
+        //         << "\nServer requested exec() but did not pass a binary to execute\n";
+        //     return blaze_exit_code::InternalError;
         //   }
-
-        //   if (final_response.has_failure_detail()) {
-        //     BAZEL_LOG(INFO) << "failure_detail: "
-        //                     << final_response.failure_detail().DebugString();
+        //
+        //   vector<string> argv(request.argv().begin(), request.argv().end());
+        //   for (const auto &variable : request.environment_variable()) {
+        //     SetEnv(variable.name(), variable.value());
         //   }
+        //
+        //   if (!blaze_util::ChangeDirectory(request.working_directory())) {
+        //     BAZEL_DIE(blaze_exit_code::InternalError)
+        //         << "changing directory into " << request.working_directory()
+        //         << " failed: " << GetLastErrorString();
+        //   }
+        //
+        //   // Execute the requested program, but before doing so, flush everything
+        //   // we still have to say.
+        //   fflush(NULL);
+        //   ExecuteRunRequest(blaze_util::Path(request.argv(0)), argv);
+        // }
 
-        //   // We'll exit with exit code SIGPIPE on Unixes due to PropagateSignalOnExit()
-        //   return pipe_broken ? blaze_exit_code::LocalEnvironmentalError
-        //                      : final_response.exit_code();
-        Err(ExitCode::InternalError) // FIXME implement the rest of the function
+        // if (final_response.has_failure_detail()) {
+        //   BAZEL_LOG(INFO) << "failure_detail: "
+        //                   << final_response.failure_detail().DebugString();
+        // }
+
+        // // We'll exit with exit code SIGPIPE on Unixes due to PropagateSignalOnExit()
+        // return pipe_broken ? blaze_exit_code::LocalEnvironmentalError : final_response.exit_code();
+        unimplemented!()
     }
 
     fn send_action() {
@@ -817,9 +798,9 @@ impl BazelServer {
     // running, the result is unspecified. When called, this object must be in
     // connected state.
     pub fn cancel() {
+        // assert(Connected());
+        // send_action(CancelThreadAction::CANCEL);
         unimplemented!();
-        //   assert(Connected());
-        //   send_action(CancelThreadAction::CANCEL);
     }
 }
 
@@ -843,242 +824,240 @@ fn escape_for_option_source(input: String) -> String {
 }
 
 /// Returns the JVM command argument array.
-fn get_server_exe_args() -> Vec<String> {
-    // static vector<string> get_server_exe_args(
-    //   const blaze_util::Path &jvm_path,
-    //   const string &server_jar_path,
-    //   const vector<string> &archive_contents,
-    //   const string &install_md5,
-    //   const WorkspaceLayout &workspace_layout,
-    //   const string &workspace,
-    //   const StartupOptions &startup_options,
-    // ) {
-
-    unimplemented!();
-    //   vector<string> result;
+fn get_server_exe_args(
+    jvm_path: &PathBuf,            // const blaze_util::Path &jvm_path,
+    server_jar_path: &PathBuf,     // const string &server_jar_path,
+    archive_contents: Vec<String>, // const vector<string> &archive_contents,
+    install_md5: &str,             // const string &install_md5,
+    // const WorkspaceLayout &workspace_layout,
+    workspace: &str,                  // const string &workspace,
+    startup_options: &StartupOptions, // const StartupOptions &startup_options,
+) -> Vec<String> {
+    // vector<string> result;
     //
-    //   // e.g. A Blaze server process running in ~/src/build_root (where there's a
-    //   // ~/src/build_root/WORKSPACE file) will appear in ps(1) as "blaze(src)".
-    //   result.push_back(startup_options.get_lowercase_product_name() + "(" +
-    //                    workspace_layout.GetPrettyWorkspaceName(workspace) + ")");
-    //   startup_options.AddJVMArgumentPrefix(jvm_path.GetParent().GetParent(),
-    //                                        &result);
+    // // e.g. A Blaze server process running in ~/src/build_root (where there's a
+    // // ~/src/build_root/WORKSPACE file) will appear in ps(1) as "blaze(src)".
+    // result.push_back(startup_options.get_lowercase_product_name() + "(" +
+    //                  workspace_layout.GetPrettyWorkspaceName(workspace) + ")");
+    // startup_options.AddJVMArgumentPrefix(jvm_path.GetParent().GetParent(),
+    //                                      &result);
     //
-    //   result.push_back("-XX:+HeapDumpOnOutOfMemoryError");
-    //   result.push_back("-XX:HeapDumpPath=" +
-    //                    startup_options.output_base.AsJvmArgument());
+    // result.push_back("-XX:+HeapDumpOnOutOfMemoryError");
+    // result.push_back("-XX:HeapDumpPath=" +
+    //                  startup_options.output_base.AsJvmArgument());
     //
-    //   // TODO(b/109998449): only assume JDK >= 9 for embedded JDKs
-    //   if (!startup_options.GetEmbeddedJavabase().IsEmpty()) {
-    //     // quiet warnings from com.google.protobuf.UnsafeUtil,
-    //     // see: https://github.com/google/protobuf/issues/3781
-    //     result.push_back("--add-opens=java.base/java.nio=ALL-UNNAMED");
-    //     result.push_back("--add-opens=java.base/java.lang=ALL-UNNAMED");
-    //   }
+    // // TODO(b/109998449): only assume JDK >= 9 for embedded JDKs
+    // if (!startup_options.GetEmbeddedJavabase().IsEmpty()) {
+    //   // quiet warnings from com.google.protobuf.UnsafeUtil,
+    //   // see: https://github.com/google/protobuf/issues/3781
+    //   result.push_back("--add-opens=java.base/java.nio=ALL-UNNAMED");
+    //   result.push_back("--add-opens=java.base/java.lang=ALL-UNNAMED");
+    // }
     //
-    //   result.push_back("-Xverify:none");
+    // result.push_back("-Xverify:none");
     //
-    //   vector<string> user_options = startup_options.host_jvm_args;
+    // vector<string> user_options = startup_options.host_jvm_args;
     //
-    //   // Add JVM arguments particular to building blaze64 and particular JVM
-    //   // versions.
-    //   string error;
-    //   blaze_exit_code::ExitCode jvm_args_exit_code =
-    //       startup_options.AddJVMArguments(startup_options.GetServerJavabase(),
-    //                                       &result, user_options, &error);
-    //   if (jvm_args_exit_code != blaze_exit_code::SUCCESS) {
-    //     BAZEL_DIE(jvm_args_exit_code) << error;
-    //   }
+    // // Add JVM arguments particular to building blaze64 and particular JVM
+    // // versions.
+    // string error;
+    // blaze_exit_code::ExitCode jvm_args_exit_code =
+    //     startup_options.AddJVMArguments(startup_options.GetServerJavabase(),
+    //                                     &result, user_options, &error);
+    // if (jvm_args_exit_code != blaze_exit_code::SUCCESS) {
+    //   BAZEL_DIE(jvm_args_exit_code) << error;
+    // }
     //
-    //   // We put all directories on java.library.path that contain .so/.dll files.
-    //   set<string> java_library_paths;
-    //   std::stringstream java_library_path;
-    //   java_library_path << "-Djava.library.path=";
-    //   blaze_util::Path real_install_dir =
-    //       blaze_util::Path(startup_options.install_base);
+    // // We put all directories on java.library.path that contain .so/.dll files.
+    // set<string> java_library_paths;
+    // std::stringstream java_library_path;
+    // java_library_path << "-Djava.library.path=";
+    // blaze_util::Path real_install_dir =
+    //     blaze_util::Path(startup_options.install_base);
     //
-    //   for (const auto &it : archive_contents) {
-    //     if (IsSharedLibrary(it)) {
-    //       string libpath(real_install_dir.GetRelative(blaze_util::Dirname(it))
-    //                          .AsJvmArgument());
-    //       // Only add the library path if it's not added yet.
-    //       if (java_library_paths.insert(libpath).second) {
-    //         if (java_library_paths.size() > 1) {
-    //           java_library_path << kListSeparator;
-    //         }
-    //         java_library_path << libpath;
+    // for (const auto &it : archive_contents) {
+    //   if (IsSharedLibrary(it)) {
+    //     string libpath(real_install_dir.GetRelative(blaze_util::Dirname(it))
+    //                        .AsJvmArgument());
+    //     // Only add the library path if it's not added yet.
+    //     if (java_library_paths.insert(libpath).second) {
+    //       if (java_library_paths.size() > 1) {
+    //         java_library_path << kListSeparator;
     //       }
+    //       java_library_path << libpath;
     //     }
     //   }
-    //   result.push_back(java_library_path.str());
+    // }
+    // result.push_back(java_library_path.str());
     //
-    //   // Force use of latin1 for file names.
-    //   result.push_back("-Dfile.encoding=ISO-8859-1");
+    // // Force use of latin1 for file names.
+    // result.push_back("-Dfile.encoding=ISO-8859-1");
     //
-    //   if (startup_options.host_jvm_debug) {
-    //     BAZEL_LOG(USER)
-    //         << "Running host JVM under debugger (listening on TCP port 5005).";
-    //     // Start JVM so that it listens for a connection from a
-    //     // JDWP-compliant debugger:
-    //     result.push_back("-Xdebug");
-    //     result.push_back("-Xrunjdwp:transport=dt_socket,server=y,address=5005");
-    //   }
-    //   result.insert(result.end(), user_options.begin(), user_options.end());
+    // if (startup_options.host_jvm_debug) {
+    //   BAZEL_LOG(USER)
+    //       << "Running host JVM under debugger (listening on TCP port 5005).";
+    //   // Start JVM so that it listens for a connection from a
+    //   // JDWP-compliant debugger:
+    //   result.push_back("-Xdebug");
+    //   result.push_back("-Xrunjdwp:transport=dt_socket,server=y,address=5005");
+    // }
+    // result.insert(result.end(), user_options.begin(), user_options.end());
     //
-    //   startup_options.AddJVMArgumentSuffix(real_install_dir, server_jar_path,
-    //                                        &result);
+    // startup_options.AddJVMArgumentSuffix(real_install_dir, server_jar_path,
+    //                                      &result);
     //
-    //   // JVM arguments are complete. Now pass in Blaze startup options.
-    //   // Note that we always use the --flag=ARG form (instead of the --flag ARG one)
-    //   // so that BlazeRuntime#splitStartupOptions has an easy job.
+    // // JVM arguments are complete. Now pass in Blaze startup options.
+    // // Note that we always use the --flag=ARG form (instead of the --flag ARG one)
+    // // so that BlazeRuntime#splitStartupOptions has an easy job.
     //
-    //   // TODO(b/152047869): Test that whatever the list constructed after this line
-    //   // is actually a list of parseable startup options.
-    //   if (!startup_options.batch) {
-    //     result.push_back("--max_idle_secs=" +
-    //                      blaze_util::ToString(startup_options.max_idle_secs));
-    //     if (startup_options.shutdown_on_low_sys_mem) {
-    //       result.push_back("--shutdown_on_low_sys_mem");
-    //     } else {
-    //       result.push_back("--noshutdown_on_low_sys_mem");
-    //     }
+    // // TODO(b/152047869): Test that whatever the list constructed after this line
+    // // is actually a list of parseable startup options.
+    // if (!startup_options.batch) {
+    //   result.push_back("--max_idle_secs=" +
+    //                    blaze_util::ToString(startup_options.max_idle_secs));
+    //   if (startup_options.shutdown_on_low_sys_mem) {
+    //     result.push_back("--shutdown_on_low_sys_mem");
     //   } else {
-    //     // --batch must come first in the arguments to Java main() because
-    //     // the code expects it to be at args[0] if it's been set.
-    //     result.push_back("--batch");
+    //     result.push_back("--noshutdown_on_low_sys_mem");
+    //   }
+    // } else {
+    //   // --batch must come first in the arguments to Java main() because
+    //   // the code expects it to be at args[0] if it's been set.
+    //   result.push_back("--batch");
+    // }
+    //
+    // if (startup_options.command_port != 0) {
+    //   result.push_back("--command_port=" +
+    //                    blaze_util::ToString(startup_options.command_port));
+    // }
+    //
+    // result.push_back("--connect_timeout_secs=" +
+    //                  blaze_util::ToString(startup_options.connect_timeout_secs));
+    //
+    // result.push_back("--output_user_root=" +
+    //                  blaze_util::ConvertPath(startup_options.output_user_root));
+    // result.push_back("--install_base=" +
+    //                  blaze_util::ConvertPath(startup_options.install_base));
+    // result.push_back("--install_md5=" + install_md5);
+    // result.push_back("--output_base=" +
+    //                  startup_options.output_base.AsCommandLineArgument());
+    // result.push_back("--workspace_directory=" +
+    //                  blaze_util::ConvertPath(workspace));
+    // if (startup_options.autodetect_server_javabase) {
+    //   result.push_back("--default_system_javabase=" + GetSystemJavabase());
+    // }
+    //
+    // if (!startup_options.server_jvm_out.IsEmpty()) {
+    //   result.push_back("--server_jvm_out=" +
+    //                    startup_options.server_jvm_out.AsCommandLineArgument());
+    // }
+    //
+    // if (!startup_options.failure_detail_out.IsEmpty()) {
+    //   result.push_back(
+    //       "--failure_detail_out=" +
+    //       startup_options.failure_detail_out.AsCommandLineArgument());
+    // }
+    //
+    // if (startup_options.expand_configs_in_place) {
+    //   result.push_back("--expand_configs_in_place");
+    // } else {
+    //   result.push_back("--noexpand_configs_in_place");
+    // }
+    // if (!startup_options.digest_function.empty()) {
+    //   // Only include this if a value is requested - we rely on the empty case
+    //   // being "null" to set the programmatic default in the server.
+    //   result.push_back("--digest_function=" + startup_options.digest_function);
+    // }
+    // if (!startup_options.unix_digest_hash_attribute_name.empty()) {
+    //   result.push_back("--unix_digest_hash_attribute_name=" +
+    //                    startup_options.unix_digest_hash_attribute_name);
+    // }
+    // if (startup_options.idle_server_tasks) {
+    //   result.push_back("--idle_server_tasks");
+    // } else {
+    //   result.push_back("--noidle_server_tasks");
+    // }
+    //
+    // if (startup_options.write_command_log) {
+    //   result.push_back("--write_command_log");
+    // } else {
+    //   result.push_back("--nowrite_command_log");
+    // }
+    //
+    // if (startup_options.watchfs) {
+    //   result.push_back("--watchfs");
+    // } else {
+    //   result.push_back("--nowatchfs");
+    // }
+    // if (startup_options.fatal_event_bus_exceptions) {
+    //   result.push_back("--fatal_event_bus_exceptions");
+    // } else {
+    //   result.push_back("--nofatal_event_bus_exceptions");
+    // }
+    // if (startup_options.windows_enable_symlinks) {
+    //   result.push_back("--windows_enable_symlinks");
+    // } else {
+    //   result.push_back("--nowindows_enable_symlinks");
+    // }
+    // // We use this syntax so that the logic in AreStartupOptionsDifferent() that
+    // // decides whether the server needs killing is simpler. This is parsed by the
+    // // Java code where --noclient_debug and --client_debug=false are equivalent.
+    // // Note that --client_debug false (separated by space) won't work either,
+    // // because the logic in AreStartupOptionsDifferent() assumes that every
+    // // argument is in the --arg=value form.
+    // if (startup_options.client_debug) {
+    //   result.push_back("--client_debug=true");
+    // } else {
+    //   result.push_back("--client_debug=false");
+    // }
+    //
+    // // These flags are passed to the java process only for Blaze reporting
+    // // purposes; the real interpretation of the jvm flags occurs when we set up
+    // // the java command line.
+    // if (!startup_options.GetExplicitServerJavabase().IsEmpty()) {
+    //   result.push_back(
+    //       "--server_javabase=" +
+    //       startup_options.GetExplicitServerJavabase().AsCommandLineArgument());
+    // }
+    // if (startup_options.host_jvm_debug) {
+    //   result.push_back("--host_jvm_debug");
+    // }
+    // if (!startup_options.host_jvm_profile.empty()) {
+    //   result.push_back("--host_jvm_profile=" + startup_options.host_jvm_profile);
+    // }
+    // if (!startup_options.host_jvm_args.empty()) {
+    //   for (const auto &arg : startup_options.host_jvm_args) {
+    //     result.push_back("--host_jvm_args=" + arg);
+    //   }
+    // }
+    //
+    // // Pass in invocation policy as a startup argument for batch mode only.
+    // if (startup_options.batch && !startup_options.invocation_policy.empty()) {
+    //   result.push_back("--invocation_policy=" +
+    //                    startup_options.invocation_policy);
+    // }
+    //
+    // result.push_back("--product_name=" + startup_options.product_name);
+    //
+    // startup_options.AddExtraOptions(&result);
+    //
+    // // The option sources are transmitted in the following format:
+    // // --option_sources=option1:source1:option2:source2:...
+    // string option_sources = "--option_sources=";
+    // bool first = true;
+    // for (const auto &it : startup_options.option_sources) {
+    //   if (!first) {
+    //     option_sources += ":";
     //   }
     //
-    //   if (startup_options.command_port != 0) {
-    //     result.push_back("--command_port=" +
-    //                      blaze_util::ToString(startup_options.command_port));
-    //   }
+    //   first = false;
+    //   option_sources += escape_for_option_source(it.first) + ":" +
+    //                     escape_for_option_source(it.second);
+    // }
     //
-    //   result.push_back("--connect_timeout_secs=" +
-    //                    blaze_util::ToString(startup_options.connect_timeout_secs));
-    //
-    //   result.push_back("--output_user_root=" +
-    //                    blaze_util::ConvertPath(startup_options.output_user_root));
-    //   result.push_back("--install_base=" +
-    //                    blaze_util::ConvertPath(startup_options.install_base));
-    //   result.push_back("--install_md5=" + install_md5);
-    //   result.push_back("--output_base=" +
-    //                    startup_options.output_base.AsCommandLineArgument());
-    //   result.push_back("--workspace_directory=" +
-    //                    blaze_util::ConvertPath(workspace));
-    //   if (startup_options.autodetect_server_javabase) {
-    //     result.push_back("--default_system_javabase=" + GetSystemJavabase());
-    //   }
-    //
-    //   if (!startup_options.server_jvm_out.IsEmpty()) {
-    //     result.push_back("--server_jvm_out=" +
-    //                      startup_options.server_jvm_out.AsCommandLineArgument());
-    //   }
-    //
-    //   if (!startup_options.failure_detail_out.IsEmpty()) {
-    //     result.push_back(
-    //         "--failure_detail_out=" +
-    //         startup_options.failure_detail_out.AsCommandLineArgument());
-    //   }
-    //
-    //   if (startup_options.expand_configs_in_place) {
-    //     result.push_back("--expand_configs_in_place");
-    //   } else {
-    //     result.push_back("--noexpand_configs_in_place");
-    //   }
-    //   if (!startup_options.digest_function.empty()) {
-    //     // Only include this if a value is requested - we rely on the empty case
-    //     // being "null" to set the programmatic default in the server.
-    //     result.push_back("--digest_function=" + startup_options.digest_function);
-    //   }
-    //   if (!startup_options.unix_digest_hash_attribute_name.empty()) {
-    //     result.push_back("--unix_digest_hash_attribute_name=" +
-    //                      startup_options.unix_digest_hash_attribute_name);
-    //   }
-    //   if (startup_options.idle_server_tasks) {
-    //     result.push_back("--idle_server_tasks");
-    //   } else {
-    //     result.push_back("--noidle_server_tasks");
-    //   }
-    //
-    //   if (startup_options.write_command_log) {
-    //     result.push_back("--write_command_log");
-    //   } else {
-    //     result.push_back("--nowrite_command_log");
-    //   }
-    //
-    //   if (startup_options.watchfs) {
-    //     result.push_back("--watchfs");
-    //   } else {
-    //     result.push_back("--nowatchfs");
-    //   }
-    //   if (startup_options.fatal_event_bus_exceptions) {
-    //     result.push_back("--fatal_event_bus_exceptions");
-    //   } else {
-    //     result.push_back("--nofatal_event_bus_exceptions");
-    //   }
-    //   if (startup_options.windows_enable_symlinks) {
-    //     result.push_back("--windows_enable_symlinks");
-    //   } else {
-    //     result.push_back("--nowindows_enable_symlinks");
-    //   }
-    //   // We use this syntax so that the logic in AreStartupOptionsDifferent() that
-    //   // decides whether the server needs killing is simpler. This is parsed by the
-    //   // Java code where --noclient_debug and --client_debug=false are equivalent.
-    //   // Note that --client_debug false (separated by space) won't work either,
-    //   // because the logic in AreStartupOptionsDifferent() assumes that every
-    //   // argument is in the --arg=value form.
-    //   if (startup_options.client_debug) {
-    //     result.push_back("--client_debug=true");
-    //   } else {
-    //     result.push_back("--client_debug=false");
-    //   }
-    //
-    //   // These flags are passed to the java process only for Blaze reporting
-    //   // purposes; the real interpretation of the jvm flags occurs when we set up
-    //   // the java command line.
-    //   if (!startup_options.GetExplicitServerJavabase().IsEmpty()) {
-    //     result.push_back(
-    //         "--server_javabase=" +
-    //         startup_options.GetExplicitServerJavabase().AsCommandLineArgument());
-    //   }
-    //   if (startup_options.host_jvm_debug) {
-    //     result.push_back("--host_jvm_debug");
-    //   }
-    //   if (!startup_options.host_jvm_profile.empty()) {
-    //     result.push_back("--host_jvm_profile=" + startup_options.host_jvm_profile);
-    //   }
-    //   if (!startup_options.host_jvm_args.empty()) {
-    //     for (const auto &arg : startup_options.host_jvm_args) {
-    //       result.push_back("--host_jvm_args=" + arg);
-    //     }
-    //   }
-    //
-    //   // Pass in invocation policy as a startup argument for batch mode only.
-    //   if (startup_options.batch && !startup_options.invocation_policy.empty()) {
-    //     result.push_back("--invocation_policy=" +
-    //                      startup_options.invocation_policy);
-    //   }
-    //
-    //   result.push_back("--product_name=" + startup_options.product_name);
-    //
-    //   startup_options.AddExtraOptions(&result);
-    //
-    //   // The option sources are transmitted in the following format:
-    //   // --option_sources=option1:source1:option2:source2:...
-    //   string option_sources = "--option_sources=";
-    //   bool first = true;
-    //   for (const auto &it : startup_options.option_sources) {
-    //     if (!first) {
-    //       option_sources += ":";
-    //     }
-    //
-    //     first = false;
-    //     option_sources += escape_for_option_source(it.first) + ":" +
-    //                       escape_for_option_source(it.second);
-    //   }
-    //
-    //   result.push_back(option_sources);
-    //   return result;
+    // result.push_back(option_sources);
+    // return result;
+    unimplemented!();
 }
 
 /// Add common command options for logging to the given argument array.
@@ -2033,8 +2012,6 @@ fn run_launcher(
     workspace: String,
     logging_info: LoggingInfo,
 ) -> Result<(), exit_code::ExitCode> {
-    info!(log, "run_launcher");
-
     //   blaze_server = new BazelServer(startup_options);
     let server = BazelServer::new(log.new(o!("component" => "bazel-server")), startup_options);
 

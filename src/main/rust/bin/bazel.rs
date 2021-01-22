@@ -17,8 +17,8 @@ fn main() {
     let start_time = std::time::SystemTime::now();
     let args: Vec<String> = std::env::args().collect();
     let option_processor = bazel::OptionProcessor::new(
-        log.new(o!("component" => "option_parser")),
-        bazel::StartupOptions::new(String::from("Bazel")),
+        log.clone(),
+        bazel::StartupOptions::new(String::from("Bazel"), Some(log.clone())),
     );
     std::process::exit(bazel::main(log, args, option_processor, start_time) as i32);
 }

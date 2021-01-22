@@ -37,6 +37,7 @@ use crate::bazel_util;
 use crate::exit_code::{Error, ExitCode};
 use crate::workspace_layout;
 use chrono::Duration;
+use slog::info;
 
 type SpecialNullaryFlagHandler = fn(bool);
 
@@ -123,7 +124,7 @@ pub struct StartupOptions {
 
     /// If supplied, alternate location to write the blaze server's jvm's stdout.
     /// Otherwise a default path in the output base is used.
-    pub server_jvm_out: Option<String>,
+    pub server_jvm_out: Option<PathBuf>,
     //   blaze_util::Path server_jvm_out;
     /// If supplied, alternate location to write a serialized failure_detail proto.
     /// Otherwise a default path in the output base is used.
@@ -216,7 +217,7 @@ pub struct StartupOptions {
     have_invocation_policy: bool,
 
     /// Whether to output addition debugging information in the client.
-    client_debug: bool,
+    pub client_debug: bool,
 
     /// Whether the resulting command will be preempted if a subsequent command
     /// is run.
@@ -333,7 +334,7 @@ pub struct StartupOptions {
 // FIXME remove default
 impl Default for StartupOptions {
     fn default() -> Self {
-        Self::new(String::from("Bazel"))
+        Self::new(String::from("Bazel"), None)
     }
 }
 
@@ -444,7 +445,7 @@ impl StartupOptions {
             .insert(name.to_owned(), new_name.to_owned());
     }
 
-    pub fn new(product_name: String) -> Self {
+    pub fn new(product_name: String, logger: Option<slog::Logger>) -> Self {
         let mut ret = Self {
             user_bazelrc: "".to_string(),
             use_system_rc: true,
@@ -512,17 +513,24 @@ impl StartupOptions {
                 .unwrap()
                 .to_owned();
             ret.max_idle = Duration::seconds(15);
-            // FIXME BAZEL_LOG(USER) the following
-            println!(
-                "$TEST_TMPDIR defined: output root is '{}' and max_idle default is '{:?}'.",
-                ret.output_root, ret.max_idle
-            );
+
+            if let Some(log) = logger {
+                info!(
+                    log,
+                    "$TEST_TMPDIR defined: output root is '{}' and max_idle default is '{:?}'.",
+                    ret.output_root,
+                    ret.max_idle
+                );
+            }
         } else {
-            // FIXME BAZEL_LOG(INFO) the following
-            println!(
-                "output root is '{}' and max_idle default is '{:?}'.",
-                ret.output_root, ret.max_idle
-            );
+            if let Some(log) = logger {
+                info!(
+                    log,
+                    "output root is '{}' and max_idle default is '{:?}'.",
+                    ret.output_root,
+                    ret.max_idle
+                );
+            }
         };
 
         // #if defined(_WIN32) || defined(__CYGWIN__)
