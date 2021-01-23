@@ -108,22 +108,22 @@ pub fn get_unary_option() -> Option<String> {
 /// Returns true if 'arg' equals 'key'.
 /// Dies with a syntax error if arg starts with 'key='.
 /// Returns false otherwise.
-pub fn get_nullary_option() -> bool {
+pub fn get_nullary_option(arg: &str, key: &str) -> bool {
     // bool get_nullary_option(const char *arg, const char *key) {
 
+    let value = arg.trim_start_matches(key);
     //   const char *value = blaze_util::var_strprefix(arg, key);
-    //   if (value == NULL) {
-    //     return false;
-    //   } else if (value[0] == '=') {
-    //     BAZEL_DIE(blaze_exit_code::BAD_ARGV)
-    //         << "In argument '" << arg << "': option '" << key
-    //         << "' does not take a value.";
-    //   } else if (value[0]) {
-    //     return false;  // trailing garbage in key name
-    //   }
-    //
-    //   return true;
-    unimplemented!()
+
+    if value.is_empty() {
+        false
+    } else if value.starts_with('=') {
+        //     BAZEL_DIE(blaze_exit_code::BAD_ARGV)
+        //         << "In argument '" << arg << "': option '" << key
+        //         << "' does not take a value.";
+        panic!("nopnopnop")
+    } else {
+        value.chars().next().is_none()
+    }
 }
 
 /// Searches for 'key' in 'args' using get_unary_option. Arguments found after '--'
@@ -132,7 +132,7 @@ pub fn get_nullary_option() -> bool {
 /// than once and prints a warning if so.
 /// Returns the value of the 'key' flag iff it occurs in args.
 /// Returns NULL otherwise.
-pub fn search_unary_option(arg: Vec<String>, key: String, warn_if_dupe: bool) -> String {
+pub fn search_unary_option(arg: &[String], key: String, warn_if_dupe: bool) -> String {
     // const char* search_unary_option(const vector<string>& args, const char *key, bool warn_if_dupe) {
 
     //   if (args.empty()) {
@@ -157,9 +157,7 @@ pub fn search_unary_option(arg: Vec<String>, key: String, warn_if_dupe: bool) ->
     //       // the second time.
     //       return value;
     //     }
-    //     const char* result = get_unary_option(args[i].c_str(),
-    //                                         args[i + 1].c_str(),
-    //                                         key);
+    //     const char* result = get_unary_option(args[i].c_str(), args[i + 1].c_str(), key);
     //     if (result != NULL) {
     //       // 'key' was found and 'result' has its value.
     //       if (value) {
@@ -183,8 +181,7 @@ pub fn search_unary_option(arg: Vec<String>, key: String, warn_if_dupe: bool) ->
     //         found_dupe = (get_unary_option(args[i].c_str(), NULL, key) != nullptr);
     //       }
     //       if (found_dupe) {
-    //         BAZEL_LOG(WARNING) << key << " is given more than once, "
-    //                            << "only the first occurrence is used";
+    //         BAZEL_LOG(WARNING) << key << " is given more than once, " << "only the first occurrence is used";
     //       }
     //     }
     //     return value;
@@ -202,24 +199,27 @@ pub fn search_unary_option(arg: Vec<String>, key: String, warn_if_dupe: bool) ->
 /// Returns true if '--flag_name' is a flag in args and '--noflag_name' does not
 /// appear after its last occurrence. If neither '--flag_name' nor
 /// '--noflag_name' appear, returns 'default_value'. Otherwise, returns false.
-pub fn search_nullary_option() -> bool {
+pub fn search_nullary_option(args: &[String], flag_name: &str, default_value: bool) -> bool {
     // bool search_nullary_option(const vector<string>& args, const string& flag_name, const bool default_value) {
 
-    //   const string positive_flag = "--" + flag_name;
-    //   const string negative_flag = "--no" + flag_name;
-    //   bool result = default_value;
-    //   for (vector<string>::size_type i = 0; i < args.size(); i++) {
-    //     if (args[i] == "--") {
-    //       break;
-    //     }
-    //     if (get_nullary_option(args[i].c_str(), positive_flag.c_str())) {
-    //       result = true;
-    //     } else if (get_nullary_option(args[i].c_str(), negative_flag.c_str())) {
-    //       result = false;
-    //     }
-    //   }
-    //   return result;
-    unimplemented!()
+    let positive_flag = &format!("--{}", flag_name);
+    let negative_flag = &format!("--no{}", flag_name);
+
+    for arg in args.iter() {
+        //   for (vector<string>::size_type i = 0; i < args.size(); i++) {
+
+        if arg == "--" {
+            break;
+        }
+
+        if get_nullary_option(arg, positive_flag) {
+            return true;
+        } else if get_nullary_option(arg, negative_flag) {
+            return false;
+        }
+    }
+
+    default_value
 }
 
 /// Returns true iff arg is a valid command line argument for bazel.
@@ -315,4 +315,43 @@ pub fn set_debug_log(enabled: bool) {
 /// This method observes the TEST_TMPDIR envvar.
 pub fn is_running_within_test() -> bool {
     env::var("TEST_TMPDIR").is_ok()
+}
+
+#[cfg(target_family = "unix")]
+pub fn hashed_base_dir(root: &PathBuf, hashable: &str) -> PathBuf {
+    let digest = md5::compute(hashable);
+    root.join(format!("{:x}", digest))
+}
+
+#[cfg(target_family = "windows")]
+pub fn hashed_base_dir(root: PathBuf, hashable: &str) -> String {
+    //   // Builds a shorter output base dir name for Windows.
+    //
+    //   // We create a path name representing the 128 bits of MD5 digest. To avoid
+    //   // platform incompatibilities we restrict the alphabet to ASCII letters and
+    //   // numbers. Windows paths are case-insensitive, so use only lower-case
+    //   // letters. These constraints yield a 5-bit alphabet.
+    //   // Since we only need 6 digits, ignore 0 and 1 because they look like
+    //   // upper-case "O" and lower-case "l".
+    //   static const char* alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+    //
+    //   // 128 bits of data in base-32 require 128/5 = 25 digits with 3 bits lost.
+    //   // Maximum path length on Windows is only 259 characters, so we'll only use
+    //   // a few characters characters (base-32 digits) to represent the digest.
+    //   // Using only 8 characters we represent 40 bits of the original 128.
+    //   // Since the mapping is lossy and collisions are unlikely in practice, we'll
+    //   // keep the mapping simple and just use the lower 5 bits of the first 8 bytes.
+    //   static const unsigned char kLower5BitsMask = 0x1F;
+    //   static const int filename_length = 8;
+    //   unsigned char md5[blaze_util::Md5Digest::kDigestLength];
+    //   char coded_name[filename_length + 1];
+    //   blaze_util::Md5Digest digest;
+    //   digest.Update(hashable.data(), hashable.size());
+    //   digest.Finish(md5);
+    //   for (int i = 0; i < filename_length; ++i) {
+    //     coded_name[i] = alphabet[md5[i] & kLower5BitsMask];
+    //   }
+    //   coded_name[filename_length] = '\0';
+    //   return blaze_util::JoinPath(root, string(coded_name));
+    unimplemented!()
 }

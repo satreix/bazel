@@ -91,6 +91,7 @@ use std::path::{Path, PathBuf};
 
 extern crate chrono;
 extern crate dirs;
+extern crate md5;
 extern crate protobuf;
 extern crate slog;
 use slog::{debug, error, info, o};
@@ -286,37 +287,36 @@ struct BazelServer {
     batch: bool,
     block_for_lock: bool,
     preemptible: bool,
-    output_base: String, // FIXME use path:  const blaze_util::Path output_base_;
+    output_base: PathBuf,
 }
 
 impl BazelServer {
-    pub fn new(logger: slog::Logger, startup_options: StartupOptions) -> Self {
+    pub fn new(logger: slog::Logger, so: &StartupOptions) -> Self {
+        let ob = so.output_base.clone().unwrap();
+        let sjo = so.server_jvm_out.clone();
+
         let ret = Self {
             logger,
             client: None,
             request_cookie: "".to_string(),
             response_cookie: "".to_string(),
             command_id: Mutex::new("".to_string()),
-            process_info: ServerProcessInfo::new(
-                startup_options.output_base,
-                startup_options.server_jvm_out,
-            ),
-            connect_timeout: startup_options.connect_timeout,
-            batch: false,
-            block_for_lock: false,
-            preemptible: false,
-            output_base: "".to_string(),
+            process_info: ServerProcessInfo::new(ob.clone(), sjo),
+            connect_timeout: so.connect_timeout,
+            batch: so.batch,
+            block_for_lock: so.block_for_lock,
+            preemptible: so.preemptible,
+            output_base: ob,
         };
 
-        if !startup_options.client_debug {
-            //     gpr_set_log_function(null_grpc_log_function);
+        if !so.client_debug {
+            // gpr_set_log_function(null_grpc_log_function);
         }
 
-        //   pipe_.reset(blaze_util::CreatePipe());
-        //   if (!pipe_) {
-        //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
-        //         << "Couldn't create pipe: " << GetLastErrorString();
-        //   }
+        // pipe_.reset(blaze_util::CreatePipe());
+        // if (!pipe_) {
+        //   BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError) << "Couldn't create pipe: " << GetLastErrorString();
+        // }
 
         ret
     }
@@ -338,8 +338,10 @@ impl BazelServer {
     /// number of milliseconds spent waiting for the lock.
     pub fn acquire_lock(&self) -> std::time::Duration {
         // uint64_t BazelServer::acquire_lock() {
-        unimplemented!();
+
         // return blaze::acquire_lock(output_base_, batch_, block_for_lock_, &blaze_lock_);
+        // FIXME
+        Duration::seconds(5).to_std().unwrap()
     }
 
     fn try_connect(self) -> bool {
@@ -781,7 +783,7 @@ impl BazelServer {
 
         // // We'll exit with exit code SIGPIPE on Unixes due to PropagateSignalOnExit()
         // return pipe_broken ? blaze_exit_code::LocalEnvironmentalError : final_response.exit_code();
-        unimplemented!()
+        Ok(())
     }
 
     fn send_action() {
@@ -837,14 +839,11 @@ fn get_server_exe_args(
     //
     // // e.g. A Blaze server process running in ~/src/build_root (where there's a
     // // ~/src/build_root/WORKSPACE file) will appear in ps(1) as "blaze(src)".
-    // result.push_back(startup_options.get_lowercase_product_name() + "(" +
-    //                  workspace_layout.GetPrettyWorkspaceName(workspace) + ")");
-    // startup_options.AddJVMArgumentPrefix(jvm_path.GetParent().GetParent(),
-    //                                      &result);
+    // result.push_back(startup_options.get_lowercase_product_name() + "(" + workspace_layout.GetPrettyWorkspaceName(workspace) + ")");
+    // startup_options.AddJVMArgumentPrefix(jvm_path.GetParent().GetParent(), &result);
     //
     // result.push_back("-XX:+HeapDumpOnOutOfMemoryError");
-    // result.push_back("-XX:HeapDumpPath=" +
-    //                  startup_options.output_base.AsJvmArgument());
+    // result.push_back("-XX:HeapDumpPath=" + startup_options.output_base.AsJvmArgument());
     //
     // // TODO(b/109998449): only assume JDK >= 9 for embedded JDKs
     // if (!startup_options.GetEmbeddedJavabase().IsEmpty()) {
@@ -861,9 +860,7 @@ fn get_server_exe_args(
     // // Add JVM arguments particular to building blaze64 and particular JVM
     // // versions.
     // string error;
-    // blaze_exit_code::ExitCode jvm_args_exit_code =
-    //     startup_options.AddJVMArguments(startup_options.GetServerJavabase(),
-    //                                     &result, user_options, &error);
+    // blaze_exit_code::ExitCode jvm_args_exit_code = startup_options.AddJVMArguments(startup_options.GetServerJavabase(), &result, user_options, &error);
     // if (jvm_args_exit_code != blaze_exit_code::SUCCESS) {
     //   BAZEL_DIE(jvm_args_exit_code) << error;
     // }
@@ -872,13 +869,11 @@ fn get_server_exe_args(
     // set<string> java_library_paths;
     // std::stringstream java_library_path;
     // java_library_path << "-Djava.library.path=";
-    // blaze_util::Path real_install_dir =
-    //     blaze_util::Path(startup_options.install_base);
+    // blaze_util::Path real_install_dir = blaze_util::Path(startup_options.install_base);
     //
     // for (const auto &it : archive_contents) {
     //   if (IsSharedLibrary(it)) {
-    //     string libpath(real_install_dir.GetRelative(blaze_util::Dirname(it))
-    //                        .AsJvmArgument());
+    //     string libpath(real_install_dir.GetRelative(blaze_util::Dirname(it)).AsJvmArgument());
     //     // Only add the library path if it's not added yet.
     //     if (java_library_paths.insert(libpath).second) {
     //       if (java_library_paths.size() > 1) {
@@ -894,8 +889,7 @@ fn get_server_exe_args(
     // result.push_back("-Dfile.encoding=ISO-8859-1");
     //
     // if (startup_options.host_jvm_debug) {
-    //   BAZEL_LOG(USER)
-    //       << "Running host JVM under debugger (listening on TCP port 5005).";
+    //   BAZEL_LOG(USER) << "Running host JVM under debugger (listening on TCP port 5005).";
     //   // Start JVM so that it listens for a connection from a
     //   // JDWP-compliant debugger:
     //   result.push_back("-Xdebug");
@@ -903,8 +897,7 @@ fn get_server_exe_args(
     // }
     // result.insert(result.end(), user_options.begin(), user_options.end());
     //
-    // startup_options.AddJVMArgumentSuffix(real_install_dir, server_jar_path,
-    //                                      &result);
+    // startup_options.AddJVMArgumentSuffix(real_install_dir, server_jar_path, &result);
     //
     // // JVM arguments are complete. Now pass in Blaze startup options.
     // // Note that we always use the --flag=ARG form (instead of the --flag ARG one)
@@ -913,8 +906,7 @@ fn get_server_exe_args(
     // // TODO(b/152047869): Test that whatever the list constructed after this line
     // // is actually a list of parseable startup options.
     // if (!startup_options.batch) {
-    //   result.push_back("--max_idle_secs=" +
-    //                    blaze_util::ToString(startup_options.max_idle_secs));
+    //   result.push_back("--max_idle_secs=" + blaze_util::ToString(startup_options.max_idle_secs));
     //   if (startup_options.shutdown_on_low_sys_mem) {
     //     result.push_back("--shutdown_on_low_sys_mem");
     //   } else {
@@ -927,35 +919,26 @@ fn get_server_exe_args(
     // }
     //
     // if (startup_options.command_port != 0) {
-    //   result.push_back("--command_port=" +
-    //                    blaze_util::ToString(startup_options.command_port));
+    //   result.push_back("--command_port=" + blaze_util::ToString(startup_options.command_port));
     // }
     //
-    // result.push_back("--connect_timeout_secs=" +
-    //                  blaze_util::ToString(startup_options.connect_timeout_secs));
+    // result.push_back("--connect_timeout_secs=" + blaze_util::ToString(startup_options.connect_timeout_secs));
     //
-    // result.push_back("--output_user_root=" +
-    //                  blaze_util::ConvertPath(startup_options.output_user_root));
-    // result.push_back("--install_base=" +
-    //                  blaze_util::ConvertPath(startup_options.install_base));
+    // result.push_back("--output_user_root=" + blaze_util::ConvertPath(startup_options.output_user_root));
+    // result.push_back("--install_base=" + blaze_util::ConvertPath(startup_options.install_base));
     // result.push_back("--install_md5=" + install_md5);
-    // result.push_back("--output_base=" +
-    //                  startup_options.output_base.AsCommandLineArgument());
-    // result.push_back("--workspace_directory=" +
-    //                  blaze_util::ConvertPath(workspace));
+    // result.push_back("--output_base=" + startup_options.output_base.AsCommandLineArgument());
+    // result.push_back("--workspace_directory=" + blaze_util::ConvertPath(workspace));
     // if (startup_options.autodetect_server_javabase) {
     //   result.push_back("--default_system_javabase=" + GetSystemJavabase());
     // }
     //
     // if (!startup_options.server_jvm_out.IsEmpty()) {
-    //   result.push_back("--server_jvm_out=" +
-    //                    startup_options.server_jvm_out.AsCommandLineArgument());
+    //   result.push_back("--server_jvm_out=" + startup_options.server_jvm_out.AsCommandLineArgument());
     // }
     //
     // if (!startup_options.failure_detail_out.IsEmpty()) {
-    //   result.push_back(
-    //       "--failure_detail_out=" +
-    //       startup_options.failure_detail_out.AsCommandLineArgument());
+    //   result.push_back("--failure_detail_out=" + startup_options.failure_detail_out.AsCommandLineArgument());
     // }
     //
     // if (startup_options.expand_configs_in_place) {
@@ -969,8 +952,7 @@ fn get_server_exe_args(
     //   result.push_back("--digest_function=" + startup_options.digest_function);
     // }
     // if (!startup_options.unix_digest_hash_attribute_name.empty()) {
-    //   result.push_back("--unix_digest_hash_attribute_name=" +
-    //                    startup_options.unix_digest_hash_attribute_name);
+    //   result.push_back("--unix_digest_hash_attribute_name=" + startup_options.unix_digest_hash_attribute_name);
     // }
     // if (startup_options.idle_server_tasks) {
     //   result.push_back("--idle_server_tasks");
@@ -1015,9 +997,7 @@ fn get_server_exe_args(
     // // purposes; the real interpretation of the jvm flags occurs when we set up
     // // the java command line.
     // if (!startup_options.GetExplicitServerJavabase().IsEmpty()) {
-    //   result.push_back(
-    //       "--server_javabase=" +
-    //       startup_options.GetExplicitServerJavabase().AsCommandLineArgument());
+    //   result.push_back("--server_javabase=" + startup_options.GetExplicitServerJavabase().AsCommandLineArgument());
     // }
     // if (startup_options.host_jvm_debug) {
     //   result.push_back("--host_jvm_debug");
@@ -1033,8 +1013,7 @@ fn get_server_exe_args(
     //
     // // Pass in invocation policy as a startup argument for batch mode only.
     // if (startup_options.batch && !startup_options.invocation_policy.empty()) {
-    //   result.push_back("--invocation_policy=" +
-    //                    startup_options.invocation_policy);
+    //   result.push_back("--invocation_policy=" + startup_options.invocation_policy);
     // }
     //
     // result.push_back("--product_name=" + startup_options.product_name);
@@ -1051,8 +1030,7 @@ fn get_server_exe_args(
     //   }
     //
     //   first = false;
-    //   option_sources += escape_for_option_source(it.first) + ":" +
-    //                     escape_for_option_source(it.second);
+    //   option_sources += escape_for_option_source(it.first) + ":" + escape_for_option_source(it.second);
     // }
     //
     // result.push_back(option_sources);
@@ -1071,25 +1049,21 @@ fn add_logging_args() {
     unimplemented!();
     //   // The time in ms the launcher spends before sending the request to the blaze
     //   // server.
-    //   args->push_back("--startup_time=" +
-    //                   blaze_util::ToString(client_startup_duration.millis));
+    //   args->push_back("--startup_time=" + blaze_util::ToString(client_startup_duration.millis));
     //
     //   // The time in ms a command had to wait on a busy Blaze server process.
     //   // This is part of startup_time.
     //   if (command_wait_duration_ms.IsKnown()) {
-    //     args->push_back("--command_wait_time=" +
-    //                     blaze_util::ToString(command_wait_duration_ms.millis));
+    //     args->push_back("--command_wait_time=" + blaze_util::ToString(command_wait_duration_ms.millis));
     //   }
     //
     //   // The time in ms spent on extracting the new blaze version.
     //   // This is part of startup_time.
     //   if (extract_data_duration.IsKnown()) {
-    //     args->push_back("--extract_data_time=" +
-    //                     blaze_util::ToString(extract_data_duration.millis));
+    //     args->push_back("--extract_data_time=" + blaze_util::ToString(extract_data_duration.millis));
     //   }
     //   if (logging_info.restart_reason != NoRestart) {
-    //     args->push_back(string("--restart_reason=") +
-    //                     ReasonString(logging_info.restart_reason));
+    //     args->push_back(string("--restart_reason=") + ReasonString(logging_info.restart_reason));
     //   }
     //   args->push_back(string("--binary_path=") + logging_info.binary_path);
 }
@@ -1106,9 +1080,7 @@ fn ensure_server_dir() {
     unimplemented!();
     //   // The server dir has the connection info - don't allow access by other users.
     //   if (!blaze_util::MakeDirectories(server_dir, 0700)) {
-    //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
-    //         << "server directory '" << server_dir.AsPrintablePath()
-    //         << "' could not be created: " << GetLastErrorString();
+    //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError) << "server directory '" << server_dir.AsPrintablePath() << "' could not be created: " << GetLastErrorString();
     //   }
 }
 
@@ -1118,9 +1090,7 @@ fn go_to_workspace() {
 
     unimplemented!();
     //   if (workspace_layout.InWorkspace(workspace) && !blaze_util::ChangeDirectory(workspace)) {
-    //     BAZEL_DIE(blaze_exit_code::InternalError)
-    //         << "changing directory into " << workspace
-    //         << " failed: " << GetLastErrorString();
+    //     BAZEL_DIE(blaze_exit_code::InternalError) << "changing directory into " << workspace << " failed: " << GetLastErrorString();
     //   }
 }
 
@@ -1138,29 +1108,23 @@ fn run_server_mode() {
 
     unimplemented!();
     //   if (startup_options.batch) {
-    //     BAZEL_DIE(blaze_exit_code::BAD_ARGV)
-    //         << "exec-server command is not compatible with --batch";
+    //     BAZEL_DIE(blaze_exit_code::BAD_ARGV) << "exec-server command is not compatible with --batch";
     //   }
     //
     //   BAZEL_LOG(INFO) << "Running in server mode.";
     //
     //   if (server->Connected()) {
-    //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
-    //         << "exec-server failed, please shut down existing server pid="
-    //         << server->process_info().server_pid_ << " and retry.";
+    //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError) << "exec-server failed, please shut down existing server pid=" << server->process_info().server_pid_ << " and retry.";
     //   }
     //
     //   ensure_server_dir(server_dir);
     //
-    //   blaze_util::WriteFile(blaze::GetProcessIdAsString(),
-    //                         server_dir.GetRelative("server.pid.txt"));
-    //   blaze_util::WriteFile(get_argument_string(server_exe_args),
-    //                         server_dir.GetRelative("cmdline"));
+    //   blaze_util::WriteFile(blaze::GetProcessIdAsString(), server_dir.GetRelative("server.pid.txt"));
+    //   blaze_util::WriteFile(get_argument_string(server_exe_args), server_dir.GetRelative("cmdline"));
     //
     //   go_to_workspace(workspace_layout, workspace);
     //
-    //   SetScheduling(startup_options.batch_cpu_scheduling,
-    //                 startup_options.io_nice_level);
+    //   SetScheduling(startup_options.batch_cpu_scheduling, startup_options.io_nice_level);
     //
     //   {
     //     WithEnvVars env_obj(PrepareEnvironmentForJvm());
@@ -1184,15 +1148,12 @@ fn run_batch_mode() {
     //     server->kill_running_server();
     //   }
     //
-    //   const DurationMillis client_startup_duration(GetMillisecondsMonotonic() -
-    //                                                logging_info->start_time_ms);
+    //   const DurationMillis client_startup_duration(GetMillisecondsMonotonic() - logging_info->start_time_ms);
     //
-    //   BAZEL_LOG(INFO) << "Starting " << startup_options.product_name
-    //                   << " in batch mode.";
+    //   BAZEL_LOG(INFO) << "Starting " << startup_options.product_name << " in batch mode.";
     //
     //   const string command = option_processor.get_command();
-    //   const vector<string> command_arguments =
-    //       option_processor.GetCommandArguments();
+    //   const vector<string> command_arguments = option_processor.GetCommandArguments();
     //
     //   if (!command_arguments.empty() && command == "shutdown") {
     //     string product = startup_options.get_lowercase_product_name();
@@ -1209,18 +1170,14 @@ fn run_batch_mode() {
     //
     //   if (!command.empty()) {
     //     jvm_args_vector.push_back(command);
-    //     add_logging_args(*logging_info, client_startup_duration,
-    //                    extract_data_duration, command_wait_duration_ms,
-    //                    &jvm_args_vector);
+    //     add_logging_args(*logging_info, client_startup_duration, extract_data_duration, command_wait_duration_ms, &jvm_args_vector);
     //   }
     //
-    //   jvm_args_vector.insert(jvm_args_vector.end(), command_arguments.begin(),
-    //                          command_arguments.end());
+    //   jvm_args_vector.insert(jvm_args_vector.end(), command_arguments.begin(), command_arguments.end());
     //
     //   go_to_workspace(workspace_layout, workspace);
     //
-    //   SetScheduling(startup_options.batch_cpu_scheduling,
-    //                 startup_options.io_nice_level);
+    //   SetScheduling(startup_options.batch_cpu_scheduling, startup_options.io_nice_level);
     //
     //   {
     //     WithEnvVars env_obj(PrepareEnvironmentForJvm());
@@ -1239,17 +1196,13 @@ fn write_file_to_stderr_or_die() {
     // #endif
     //
     //   if (fp == NULL) {
-    //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
-    //         << "opening " << path.AsPrintablePath()
-    //         << " failed: " << GetLastErrorString();
+    //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError) << "opening " << path.AsPrintablePath() << " failed: " << GetLastErrorString();
     //   }
     //   char buffer[255];
     //   int num_read;
     //   while ((num_read = fread(buffer, 1, sizeof buffer, fp)) > 0) {
     //     if (ferror(fp)) {
-    //       BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
-    //           << "failed to read from '" << path.AsPrintablePath()
-    //           << "': " << GetLastErrorString();
+    //       BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError) << "failed to read from '" << path.AsPrintablePath() << "': " << GetLastErrorString();
     //     }
     //     fwrite(buffer, 1, num_read, stderr);
     //   }
@@ -1267,8 +1220,7 @@ fn get_server_pid() -> i32 {
     //   blaze_util::Path pid_file = server_dir.GetRelative(kServerPidFile);
     //   string bufstr;
     //   int result;
-    //   if (!blaze_util::ReadFile(pid_file, &bufstr, 32) ||
-    //       !blaze_util::safe_strto32(bufstr, &result)) {
+    //   if (!blaze_util::ReadFile(pid_file, &bufstr, 32) || !blaze_util::safe_strto32(bufstr, &result)) {
     //     return -1;
     //   }
     //
@@ -1288,28 +1240,22 @@ fn connect_or_die() {
     // debugger.
 
     //   const auto start_time = std::chrono::system_clock::now();
-    //   const auto try_until_time =
-    //       start_time +
-    //       std::chrono::seconds(startup_options.local_startup_timeout_secs);
+    //   const auto try_until_time = start_time + std::chrono::seconds(startup_options.local_startup_timeout_secs);
     //   // Print an update at most once every 10 seconds if we are still trying to
     //   // connect.
     //   const auto min_message_interval = std::chrono::seconds(10);
     //   auto last_message_time = start_time;
     //   while (std::chrono::system_clock::now() < try_until_time) {
     //     const auto attempt_time = std::chrono::system_clock::now();
-    //     const auto next_attempt_time =
-    //         attempt_time + std::chrono::milliseconds(100);
+    //     const auto next_attempt_time = attempt_time + std::chrono::milliseconds(100);
     //
     //     if (server->Connect()) {
     //       return;
     //     }
     //
     //     if (attempt_time >= (last_message_time + min_message_interval)) {
-    //       auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(
-    //           attempt_time - start_time);
-    //       BAZEL_LOG(USER) << "... still trying to connect to local "
-    //                       << startup_options.product_name << " server after "
-    //                       << elapsed_time.count() << " seconds ...";
+    //       auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(attempt_time - start_time);
+    //       BAZEL_LOG(USER) << "... still trying to connect to local " << startup_options.product_name << " server after " << elapsed_time.count() << " seconds ...";
     //       last_message_time = attempt_time;
     //     }
     //
@@ -1319,36 +1265,28 @@ fn connect_or_die() {
     //       if (server->process_info().jvm_log_file_append_) {
     //         // Don't dump the log if we were appending - the user should know where
     //         // to find it, and who knows how much content they may have accumulated.
-    //         BAZEL_LOG(USER)
-    //             << "Server crashed during startup. See "
-    //             << server->process_info().jvm_log_file_.AsPrintablePath();
+    //         BAZEL_LOG(USER) << "Server crashed during startup. See " << server->process_info().jvm_log_file_.AsPrintablePath();
     //       } else {
-    //         BAZEL_LOG(USER)
-    //             << "Server crashed during startup. Now printing "
-    //             << server->process_info().jvm_log_file_.AsPrintablePath();
+    //         BAZEL_LOG(USER) << "Server crashed during startup. Now printing " << server->process_info().jvm_log_file_.AsPrintablePath();
     //         write_file_to_stderr_or_die(server->process_info().jvm_log_file_);
     //       }
     //       exit(blaze_exit_code::InternalError);
     //     }
     //   }
-    //   BAZEL_DIE(blaze_exit_code::InternalError)
-    //       << "couldn't connect to server (" << server_pid << ") after "
-    //       << startup_options.local_startup_timeout_secs << " seconds.";
+    //   BAZEL_DIE(blaze_exit_code::InternalError) << "couldn't connect to server (" << server_pid << ") after " << startup_options.local_startup_timeout_secs << " seconds.";
 }
 
 /// Ensures that any server previously associated with `server_dir` is no longer running.
 fn ensure_previous_server_process_terminated() {
     // static void ensure_previous_server_process_terminated(
-
-    unimplemented!();
     //     const blaze_util::Path &server_dir, const StartupOptions &startup_options,
     //     LoggingInfo *logging_info) {
+
     //   int server_pid = get_server_pid(server_dir);
     //   if (server_pid > 0) {
     //     if (VerifyServerProcess(server_pid, startup_options.output_base)) {
     //       if (KillServerProcess(server_pid, startup_options.output_base)) {
-    //         BAZEL_LOG(USER) << "Killed non-responsive server process (pid="
-    //                         << server_pid << ")";
+    //         BAZEL_LOG(USER) << "Killed non-responsive server process (pid=" << server_pid << ")";
     //         logging_info->set_restart_reason_if_not_set(ServerUnresponsive);
     //       } else {
     //         logging_info->set_restart_reason_if_not_set(ServerVanished);
@@ -1357,6 +1295,7 @@ fn ensure_previous_server_process_terminated() {
     //       logging_info->set_restart_reason_if_not_set(PidFileButNoServer);
     //     }
     //   }
+    unimplemented!();
 }
 
 // // Starts up a new server and connects to it. Exits if it didn't work out.
@@ -1376,24 +1315,20 @@ fn ensure_previous_server_process_terminated() {
 //
 //   // Really make sure there's no other server running in this output base (even
 //   // an unresponsive one), as that could cause major problems.
-//   ensure_previous_server_process_terminated(server_dir, startup_options,
-//                                         logging_info);
+//   ensure_previous_server_process_terminated(server_dir, startup_options, logging_info);
 //
 //   // cmdline file is used to validate the server running in this server_dir.
 //   // There's no server running now so we're safe to unconditionally write this.
-//   blaze_util::WriteFile(get_argument_string(server_exe_args),
-//                         server_dir.GetRelative("cmdline"));
+//   blaze_util::WriteFile(get_argument_string(server_exe_args), server_dir.GetRelative("cmdline"));
 //
 //   // Do this here instead of in the daemon so the user can see if it fails.
 //   go_to_workspace(workspace_layout, workspace);
 //
 //   logging_info->set_restart_reason_if_not_set(NoDaemon);
 //
-//   SetScheduling(startup_options.batch_cpu_scheduling,
-//                 startup_options.io_nice_level);
+//   SetScheduling(startup_options.batch_cpu_scheduling, startup_options.io_nice_level);
 //
-//   BAZEL_LOG(USER) << "Starting local " << startup_options.product_name
-//                   << " server and connecting to it...";
+//   BAZEL_LOG(USER) << "Starting local " << startup_options.product_name << " server and connecting to it...";
 //   BazelServerStartup *server_startup;
 //   const int server_pid = ExecuteDaemon(
 //       server_exe, server_exe_args, PrepareEnvironmentForJvm(),
@@ -1401,8 +1336,7 @@ fn ensure_previous_server_process_terminated() {
 //       server->process_info().jvm_log_file_append_, startup_options.install_base,
 //       server_dir, startup_options, &server_startup);
 //
-//   connect_or_die(option_processor, startup_options, server_pid, server_startup,
-//                server);
+//   connect_or_die(option_processor, startup_options, server_pid, server_startup, server);
 //
 //   delete server_startup;
 // }
@@ -1592,7 +1526,7 @@ fn ensure_previous_server_process_terminated() {
 //   }
 //
 //   // Facts and implications:
-//   // (a) We already verified (with EnsureCorrectRunningVersion) that the old and
+//   // (a) We already verified (with ensure_correct_running_version) that the old and
 //   //     new server versions are the same. Therefore we know that
 //   //     'running_server_args' and 'requested_args' follow the same ordering for
 //   //     flags, the same logic of deduplicating vs. not deduplicating flags, the
@@ -1674,53 +1608,57 @@ fn ensure_previous_server_process_terminated() {
 //   return false;
 // }
 
-// // Kills the old running server if it is not the same version as us,
-// // dealing with various combinations of installation scheme
-// // (installation symlink and older MD5_MANIFEST contents).
-// // This function requires that the installation be complete, and the
-// // server lock acquired.
-// static void EnsureCorrectRunningVersion(const StartupOptions &startup_options,
-//                                         LoggingInfo *logging_info,
-//                                         BazelServer *server) {
-//   // Read the previous installation's semaphore symlink in output_base. If the
-//   // target dirs don't match, or if the symlink was not present, then kill any
-//   // running servers. Lastly, symlink to our installation so others know which
-//   // installation is running.
-//   const blaze_util::Path installation_path =
-//       startup_options.output_base.GetRelative("install");
-//   string prev_installation;
-//   bool ok =
-//       blaze_util::ReadDirectorySymlink(installation_path, &prev_installation);
-//   if (!ok || !blaze_util::CompareAbsolutePaths(prev_installation,
-//                                                startup_options.install_base)) {
-//     if (server->Connected()) {
-//       BAZEL_LOG(INFO)
-//           << "Killing running server because it is using another version of "
-//           << startup_options.product_name;
-//       server->kill_running_server();
-//       logging_info->restart_reason = NewVersion;
-//     }
-//
-//     blaze_util::UnlinkPath(installation_path);
-//     if (!SymlinkDirectories(startup_options.install_base, installation_path)) {
-//       string err = GetLastErrorString();
-//       BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
-//           << "failed to create installation symlink '"
-//           << installation_path.AsPrintablePath() << "': " << err;
-//     }
-//
-//     // Update the mtime of the install base so that cleanup tools can
-//     // find install bases that haven't been used for a long time
-//     std::unique_ptr<blaze_util::IFileMtime> mtime(
-//         blaze_util::CreateFileMtime());
-//     if (!mtime->SetToNow(blaze_util::Path(startup_options.install_base))) {
-//       string err = GetLastErrorString();
-//       BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
-//           << "failed to set timestamp on '" << startup_options.install_base
-//           << "': " << err;
-//     }
-//   }
-// }
+/// Kills the old running server if it is not the same version as us,
+/// dealing with various combinations of installation scheme
+/// (installation symlink and older MD5_MANIFEST contents).
+/// This function requires that the installation be complete, and the
+/// server lock acquired.
+fn ensure_correct_running_version(
+    startup_options: &StartupOptions,
+    logging_info: &LoggingInfo,
+    server: &BazelServer,
+) {
+    // static void ensure_correct_running_version(const StartupOptions &startup_options, LoggingInfo *logging_info, BazelServer *server) {
+
+    // // Read the previous installation's semaphore symlink in output_base. If the
+    // // target dirs don't match, or if the symlink was not present, then kill any
+    // // running servers. Lastly, symlink to our installation so others know which
+    // // installation is running.
+    // const blaze_util::Path installation_path = startup_options.output_base.GetRelative("install");
+    // string prev_installation;
+    // bool ok =
+    //     blaze_util::ReadDirectorySymlink(installation_path, &prev_installation);
+    // if (!ok || !blaze_util::CompareAbsolutePaths(prev_installation,
+    //                                              startup_options.install_base)) {
+    //   if (server->Connected()) {
+    //     BAZEL_LOG(INFO)
+    //         << "Killing running server because it is using another version of "
+    //         << startup_options.product_name;
+    //     server->kill_running_server();
+    //     logging_info->restart_reason = NewVersion;
+    //   }
+    //
+    //   blaze_util::UnlinkPath(installation_path);
+    //   if (!SymlinkDirectories(startup_options.install_base, installation_path)) {
+    //     string err = GetLastErrorString();
+    //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
+    //         << "failed to create installation symlink '"
+    //         << installation_path.AsPrintablePath() << "': " << err;
+    //   }
+    //
+    //   // Update the mtime of the install base so that cleanup tools can
+    //   // find install bases that haven't been used for a long time
+    //   std::unique_ptr<blaze_util::IFileMtime> mtime(
+    //       blaze_util::CreateFileMtime());
+    //   if (!mtime->SetToNow(blaze_util::Path(startup_options.install_base))) {
+    //     string err = GetLastErrorString();
+    //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
+    //         << "failed to set timestamp on '" << startup_options.install_base
+    //         << "': " << err;
+    //   }
+    // }
+    unimplemented!()
+}
 
 // static void CancelServer() { blaze_server->Cancel(); }
 
@@ -1732,17 +1670,17 @@ fn run_client_server_mode(
     // FIXME dedup with LoggingInfo bellow
     log: slog::Logger,
 
-    //     const blaze_util::Path &server_exe,
-    //const vector<string> &server_exe_args,
-    server_dir: &Path, // const blaze_util::Path &server_dir,
+    // const blaze_util::Path &server_exe,
+    // const vector<string> &server_exe_args,
+    server_dir: PathBuf, // const blaze_util::Path &server_dir,
 
-    //const WorkspaceLayout &workspace_layout,
-    //     const string &workspace,
-    //const OptionProcessor &option_processor,
-    //     const StartupOptions &startup_options,
-    //LoggingInfo *logging_info,
-    //     const DurationMillis extract_data_duration,
-    //     const DurationMillis command_wait_duration_ms,
+    // const WorkspaceLayout &workspace_layout,
+    workspace: PathBuf, // const string &workspace,
+    // const OptionProcessor &option_processor,
+    // const StartupOptions &startup_options,
+    // LoggingInfo *logging_info,
+    // const DurationMillis extract_data_duration,
+    // const DurationMillis command_wait_duration_ms,
     server: BazelServer, //BazelServer *server
 ) -> Result<(), ExitCode> {
     // static ATTRIBUTE_NORETURN void run_client_server_mode(@@ARGS@@) {
@@ -1752,16 +1690,13 @@ fn run_client_server_mode(
 
     //   while (true) {
     //     if (!server->Connected()) {
-    //       StartServerAndConnect(server_exe, server_exe_args, server_dir,
-    //                             workspace_layout, workspace, option_processor,
-    //                             startup_options, logging_info, server);
+    //       StartServerAndConnect(server_exe, server_exe_args, server_dir, workspace_layout, workspace, option_processor, startup_options, logging_info, server);
     //     }
     //
     //     // Check for the case when the workspace directory deleted and then gets
     //     // recreated while the server is running.
     //
-    //     std::unique_ptr<blaze_util::Path> server_cwd =
-    //         GetProcessCWD(server->process_info().server_pid_);
+    //     std::unique_ptr<blaze_util::Path> server_cwd = GetProcessCWD(server->process_info().server_pid_);
     //     // If server_cwd is nullptr, GetProcessCWD failed. This notably occurs when
     //     // running under Docker because then readlink(/proc/[pid]/cwd) returns
     //     // EPERM.
@@ -1779,8 +1714,7 @@ fn run_client_server_mode(
     //       // There's a distant possibility that the two paths look the same yet are
     //       // actually different because the two processes have different mount
     //       // tables.
-    //       BAZEL_LOG(INFO) << "Server's cwd moved or deleted ("
-    //                       << server_cwd->AsPrintablePath() << ").";
+    //       BAZEL_LOG(INFO) << "Server's cwd moved or deleted (" << server_cwd->AsPrintablePath() << ").";
     //       server->kill_running_server();
     //     } else {
     //       break;
@@ -1797,82 +1731,76 @@ fn run_client_server_mode(
 
     //   SignalHandler::Get().PropagateSignalOrExit(server->Communicate(
     server.communicate(
-        "version", //       option_processor.get_command(),
-        Vec::<&str>::new(), //option_processor.GetCommandArguments(),
-                   //       startup_options.invocation_policy,
-                   //       startup_options.original_startup_options_,
-                   //*logging_info,
-                   //       client_startup_duration,
-                   //extract_data_duration,
-                   //       command_wait_duration_ms
+        "version", // option_processor.get_command(),
+        Vec::<&str>::new(), // option_processor.GetCommandArguments(),
+                   // startup_options.invocation_policy,
+                   // startup_options.original_startup_options_,
+                   // *logging_info,
+                   // client_startup_duration,
+                   // extract_data_duration,
+                   // command_wait_duration_ms
     )
 }
 
-// // Updates the parsed startup options and global config to fill in defaults.
-// static void UpdateConfiguration(const string &install_md5,
-//                                 const string &workspace, const bool server_mode,
-//                                 StartupOptions *startup_options) {
-//   // The default install_base is <output_user_root>/install/<md5(blaze)>
-//   // but if an install_base is specified on the command line, we use that as
-//   // the base instead.
-//   if (startup_options->install_base.empty()) {
-//     if (server_mode) {
-//       BAZEL_DIE(blaze_exit_code::BAD_ARGV)
-//           << "exec-server requires --install_base";
-//     }
-//     string install_user_root =
-//         blaze_util::JoinPath(startup_options->output_user_root, "install");
-//     startup_options->install_base =
-//         blaze_util::JoinPath(install_user_root, install_md5);
-//   }
-//
-//   if (startup_options->output_base.IsEmpty()) {
-//     if (server_mode) {
-//       BAZEL_DIE(blaze_exit_code::BAD_ARGV)
-//           << "exec-server requires --output_base";
-//     }
-//     startup_options->output_base = blaze_util::Path(
-//         blaze::GetHashedBaseDir(startup_options->output_user_root, workspace));
-//   }
-//
-//   if (!blaze_util::PathExists(startup_options->output_base)) {
-//     if (!blaze_util::MakeDirectories(startup_options->output_base, 0777)) {
-//       string err = GetLastErrorString();
-//       BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
-//           << "Output base directory '"
-//           << startup_options->output_base.AsPrintablePath()
-//           << "' could not be created: " << err;
-//     }
-//   } else {
-//     if (!blaze_util::IsDirectory(startup_options->output_base)) {
-//       BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
-//           << "Output base directory '"
-//           << startup_options->output_base.AsPrintablePath()
-//           << "' could not be created. It exists but is not a directory.";
-//     }
-//   }
-//   if (!blaze_util::CanAccessDirectory(startup_options->output_base)) {
-//     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
-//         << "Output base directory '"
-//         << startup_options->output_base.AsPrintablePath()
-//         << "' must be readable and writable.";
-//   }
-//   ExcludePathFromBackup(startup_options->output_base);
-//
-//   startup_options->output_base = startup_options->output_base.Canonicalize();
-//   if (startup_options->output_base.IsEmpty()) {
-//     string err = GetLastErrorString();
-//     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError)
-//         << "blaze_util::MakeCanonical('"
-//         << startup_options->output_base.AsPrintablePath()
-//         << "') failed: " << err;
-//   }
-//
-//   if (startup_options->failure_detail_out.IsEmpty()) {
-//     startup_options->failure_detail_out =
-//         startup_options->output_base.GetRelative("failure_detail.rawproto");
-//   }
-// }
+/// Updates the parsed startup options and global config to fill in defaults.
+fn update_configuration(
+    install_md5: &str,
+    workspace: &PathBuf,
+    server_mode: bool,
+    startup_options: &mut StartupOptions,
+) -> Result<(), exit_code::Error> {
+    //   // The default install_base is <output_user_root>/install/<md5(blaze)>
+    //   // but if an install_base is specified on the command line, we use that as
+    //   // the base instead.
+    //   if (startup_options->install_base.empty()) {
+    //     if (server_mode) {
+    //       BAZEL_DIE(blaze_exit_code::BAD_ARGV) << "exec-server requires --install_base";
+    //     }
+    //     string install_user_root = blaze_util::JoinPath(startup_options->output_user_root, "install");
+    //     startup_options->install_base = blaze_util::JoinPath(install_user_root, install_md5);
+    //   }
+
+    if startup_options.output_base.is_none() {
+        if server_mode {
+            return Err(exit_code::Error::new(
+                exit_code::ExitCode::BadArgv,
+                "exec-server requires --output_base".to_string(),
+            ));
+        }
+
+        startup_options.output_base = Some(bazel_util::hashed_base_dir(
+            &startup_options.output_user_root,
+            workspace.to_str().unwrap(),
+        ));
+    }
+
+    //   if (!blaze_util::PathExists(startup_options->output_base)) {
+    //     if (!blaze_util::MakeDirectories(startup_options->output_base, 0777)) {
+    //       string err = GetLastErrorString();
+    //       BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError) << "Output base directory '" << startup_options->output_base.AsPrintablePath() << "' could not be created: " << err;
+    //     }
+    //   } else {
+    //     if (!blaze_util::IsDirectory(startup_options->output_base)) {
+    //       BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError) << "Output base directory '" << startup_options->output_base.AsPrintablePath() << "' could not be created. It exists but is not a directory.";
+    //     }
+    //   }
+    //   if (!blaze_util::CanAccessDirectory(startup_options->output_base)) {
+    //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError) << "Output base directory '" << startup_options->output_base.AsPrintablePath() << "' must be readable and writable.";
+    //   }
+    //   ExcludePathFromBackup(startup_options->output_base);
+
+    //   startup_options->output_base = startup_options->output_base.Canonicalize();
+    //   if (startup_options->output_base.IsEmpty()) {
+    //     string err = GetLastErrorString();
+    //     BAZEL_DIE(blaze_exit_code::LocalEnvironmentalError) << "blaze_util::MakeCanonical('" << startup_options->output_base.AsPrintablePath() << "') failed: " << err;
+    //   }
+
+    //   if (startup_options->failure_detail_out.IsEmpty()) {
+    //     startup_options->failure_detail_out = startup_options->output_base.GetRelative("failure_detail.rawproto");
+    //   }
+
+    Ok(())
+}
 
 // // Prepares the environment to be suitable to start a JVM.
 // // Changes made to the environment in this function *will not* be part
@@ -2005,25 +1933,16 @@ fn print_version_info(self_path: &str, product_name: &str) {
 fn run_launcher(
     log: slog::Logger,
     self_path: String,
-    //archive_contents: Vec<String>,
-    //install_md5: String,
+    archive_contents: Vec<String>,
+    install_md5: &str,
     startup_options: StartupOptions,
     option_processor: OptionProcessor,
-    workspace: String,
+    workspace: PathBuf,
     logging_info: LoggingInfo,
 ) -> Result<(), exit_code::ExitCode> {
-    //   blaze_server = new BazelServer(startup_options);
-    let server = BazelServer::new(log.new(o!("component" => "bazel-server")), startup_options);
-
-    //   const DurationMillis command_wait_duration_ms(blaze_server->acquire_lock());
-    //let command_wait = srv.acquire_lock();
-
-    //   BAZEL_LOG(INFO) << "Acquired the client lock, waited "
-    //                   << command_wait_duration_ms.millis << " milliseconds";
-    // info!(log,
-    //     "Acquired the client lock, waited command_wait_duration_ms.millis milliseconds";
-    //     "wait_duration" => format!("{:?}", command_wait),
-    // );
+    let server = BazelServer::new(log.new(o!("component" => "bazel-server")), &startup_options);
+    let command_wait = server.acquire_lock();
+    info!(log,"Acquired the client lock"; "wait_duration" => format!("{:?}", command_wait));
 
     //   WarnFilesystemType(startup_options.output_base);
 
@@ -2040,7 +1959,7 @@ fn run_launcher(
     //     return;
     //   }
 
-    //   EnsureCorrectRunningVersion(startup_options, logging_info, blaze_server);
+    //   ensure_correct_running_version(startup_options, logging_info, blaze_server);
 
     //   const blaze_util::Path jvm_path = startup_options.GetJvm();
     //   const string server_jar_path = get_server_jar_path(archive_contents);
@@ -2074,13 +1993,7 @@ fn run_launcher(
     //     return;
     //   }
 
-    //   const blaze_util::Path server_dir = blaze_util::Path(startup_options.output_base).GetRelative("server");
-    // FIXME this is not portable
-    let server_dir_temp_ = format!(
-        "/var/tmp/_bazel_{}/7de1337cfe696bc36a0917812baa56e7/server",
-        whoami::username()
-    );
-    let server_dir = Path::new(server_dir_temp_.as_str());
+    let server_dir = startup_options.output_base.unwrap().join("server");
 
     //   if (is_server_mode(option_processor.get_command())) {
     //     run_server_mode(server_exe, server_exe_args, server_dir, workspace_layout, workspace, option_processor, startup_options, blaze_server);
@@ -2091,9 +2004,8 @@ fn run_launcher(
     run_client_server_mode(
         log, // server_exe,
         //server_exe_args,
-        server_dir,
-        // workspace_layout,
-        //workspace,
+        server_dir, // workspace_layout,
+        workspace,
         //option_processor,
         //startup_options,
         //logging_info,
@@ -2205,12 +2117,10 @@ pub fn main(
 
     //   const string workspace = workspace_layout->GetWorkspace(cwd);
     // FIXME
-    let workspace = workspace_layout::find_workspace(cwd.to_str().unwrap())
-        .unwrap()
-        .to_string();
+    let workspace = workspace_layout::find_workspace(&cwd).unwrap();
     info!(log, "Found workspace"; "workspace" => format!("{:?}", workspace));
 
-    match option_processor.parse_options(args, &workspace, cwd.to_str().unwrap()) {
+    match option_processor.parse_options(args, &workspace, &cwd) {
         Ok(_) => {}
         Err(e) => {
             option_processor.print_startup_options_provenance_message();
@@ -2220,7 +2130,7 @@ pub fn main(
     };
 
     //   StartupOptions *startup_options = option_processor->get_parsed_startup_options();
-    let startup_options = option_processor.get_parsed_startup_options();
+    let mut startup_options = option_processor.get_parsed_startup_options();
 
     //   startup_options->MaybeLogStartupOptionWarnings();
 
@@ -2243,16 +2153,27 @@ pub fn main(
     //     startup_options->batch = true;
     //   }
 
-    // let (archive_contents, install_md5) =
-    //     archive_utils::determine_archive_contents(self_path.to_str().unwrap()).unwrap();
+    let (archive_contents, install_md5) =
+        archive_utils::determine_archive_contents(self_path.to_str().unwrap()).unwrap();
 
-    // UpdateConfiguration(install_md5, workspace, is_server_mode(option_processor->get_command()), startup_options);
+    match update_configuration(
+        install_md5,
+        &workspace,
+        false, // FIXME is_server_mode(&option_processor.get_command()),
+        &mut startup_options,
+    ) {
+        Ok(_) => {}
+        Err(e) => {
+            error!(log, "{}", e.reason());
+            return e.code();
+        }
+    };
 
     match run_launcher(
         log,
         self_path.to_str().unwrap().to_owned(),
-        //archive_contents,
-        //install_md5,
+        archive_contents,
+        install_md5,
         startup_options,
         option_processor,
         workspace,

@@ -112,14 +112,20 @@ impl PartialZipExtractor {
 
 /// Determines the contents of the archive, storing the names of the contained
 /// files into `files` and the install md5 key into `install_md5`.
-pub fn determine_archive_contents(archive_path: &str) -> Result<(Vec<String>, String), String> {
+pub fn determine_archive_contents(
+    archive_path: &str,
+) -> Result<(Vec<String>, &'static str), String> {
     // void determine_archive_contents(const std::string &archive_path,
     //                               std::vector<std::string> *files,
     //                               std::string *install_md5);
 
-    unimplemented!();
     // PartialZipExtractor pze;
     // *install_md5 = pze.unzip_until(archive_path, "install_base_key", files);
+
+    // FIXME
+    let archive_contents = Vec::<String>::new();
+    let install_md5 = "";
+    Ok((archive_contents, install_md5))
 }
 
 /// Extracts the embedded data files in `archive_path` into `output_dir`.

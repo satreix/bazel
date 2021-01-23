@@ -3,12 +3,12 @@ const WORKSPACE_MARKER: &str = "WORKSPACE";
 const WORKSPACE_PREFIX: &str = "%workspace%/";
 
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // FIXME implement for other platforms from blaze::GetOutputRoot
 #[cfg(target_os = "macos")]
-pub fn get_output_root() -> String {
-    "/var/tmp".to_string()
+pub fn get_output_root() -> PathBuf {
+    Path::new("/var/tmp").to_path_buf()
 }
 
 fn in_workspace(workspace: &str) -> bool {
@@ -18,11 +18,11 @@ fn in_workspace(workspace: &str) -> bool {
         .any(|x| x.exists() && !x.is_dir())
 }
 
-pub fn find_workspace(cwd: &str) -> Result<&str, &str> {
-    let mut workspace = Path::new(cwd);
+pub fn find_workspace(cwd: &PathBuf) -> Result<PathBuf, &'static str> {
+    let mut workspace = Path::new(cwd.to_str().unwrap());
     loop {
         if in_workspace(workspace.to_str().unwrap()) {
-            return Ok(workspace.to_str().unwrap());
+            return Ok(workspace.to_path_buf());
         }
 
         workspace = workspace.parent().ok_or("could not find workspace")?;

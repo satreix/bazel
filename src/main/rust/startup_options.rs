@@ -125,26 +125,29 @@ pub struct StartupOptions {
     /// If supplied, alternate location to write the blaze server's jvm's stdout.
     /// Otherwise a default path in the output base is used.
     pub server_jvm_out: Option<PathBuf>,
+
     //   blaze_util::Path server_jvm_out;
     /// If supplied, alternate location to write a serialized failure_detail proto.
     /// Otherwise a default path in the output base is used.
     failure_detail_out: Option<String>,
+
     //   blaze_util::Path failure_detail_out;
     /// Blaze's output base.  Everything is relative to this.  See
     /// the BlazeDirectories Java class for details.
-    pub output_base: PathBuf,
+    pub output_base: Option<PathBuf>,
+
     //   blaze_util::Path output_base;
     /// Installation base for a specific release installation.
     install_base: String,
-    //   std::string install_base;
+
     /// The toplevel directory containing Blaze's output.  When Blaze is
     /// run by a test, we use TEST_TMPDIR, simplifying the correct
     /// hermetic invocation of Blaze from tests.
-    output_root: String,
-    //   std::string output_root;
+    output_root: PathBuf,
+
     /// Blaze's output_user_root. Used only for computing install_base and
     /// output_base.
-    output_user_root: String,
+    pub output_user_root: PathBuf,
 
     /// Override more finegrained rc file flags and ignore them all.
     ignore_all_rc_files: bool,
@@ -152,13 +155,13 @@ pub struct StartupOptions {
     /// Block for the Blaze server lock. Otherwise,
     /// quit with non-0 exit code if lock can't
     /// be acquired immediately.
-    block_for_lock: bool,
+    pub block_for_lock: bool,
 
     host_jvm_debug: bool,
     autodetect_server_javabase: bool,
     host_jvm_profile: String,
     host_jvm_args: Vec<String>,
-    batch: bool,
+    pub batch: bool,
 
     /// From the man page: "This policy is useful for workloads that are
     /// non-interactive, but do not want to lower their nice value, and for
@@ -221,7 +224,7 @@ pub struct StartupOptions {
 
     /// Whether the resulting command will be preempted if a subsequent command
     /// is run.
-    preemptible: bool,
+    pub preemptible: bool,
 
     /// Value of the java.util.logging.FileHandler.formatter Java property.
     java_logging_formatter: String,
@@ -339,6 +342,170 @@ impl Default for StartupOptions {
 }
 
 impl StartupOptions {
+    pub fn new(product_name: String, logger: Option<slog::Logger>) -> Self {
+        let mut ret = Self {
+            user_bazelrc: "".to_string(),
+            use_system_rc: true,
+            use_workspace_rc: true,
+            use_home_rc: true,
+            use_master_bazelrc: true,
+            product_name,
+            server_jvm_out: None,
+            failure_detail_out: None,
+            output_base: Default::default(),
+            install_base: "".to_string(),
+            output_root: workspace_layout::get_output_root(),
+            output_user_root: Default::default(),
+            ignore_all_rc_files: false,
+            block_for_lock: true,
+            host_jvm_debug: false,
+            autodetect_server_javabase: true,
+            host_jvm_profile: "".to_string(),
+            host_jvm_args: vec![],
+            batch: false,
+            batch_cpu_scheduling: false,
+            io_nice_level: -1,
+            max_idle: Duration::hours(3),
+            shutdown_on_low_sys_mem: false,
+            oom_more_eagerly: false,
+            oom_more_eagerly_threshold: 100,
+            write_command_log: true,
+            watchfs: false,
+            fatal_event_bus_exceptions: false,
+            option_sources: Default::default(),
+            command_port: 0,
+            connect_timeout: Duration::seconds(30),
+            local_startup_timeout: Duration::minutes(2),
+            invocation_policy: "".to_string(),
+            have_invocation_policy: false,
+            client_debug: false,
+            preemptible: false,
+            java_logging_formatter: "com.google.devtools.build.lib.util.SingleLineFormatter"
+                .to_string(),
+            expand_configs_in_place: true,
+            digest_function: "".to_string(), // FIXME empty? none?       digest_function(),
+            unix_digest_hash_attribute_name: "".to_string(),
+            idle_server_tasks: true,
+            original_startup_options: Vec::<RcStartupFlag>::new(),
+            unlimit_coredumps: false,
+            incompatible_enable_execution_transition: false,
+            windows_enable_symlinks: false,
+            explicit_server_javabase: Default::default(),
+            default_server_javabase: (Default::default(), Default::default()),
+            all_nullary_startup_flags: Default::default(),
+            no_rc_nullary_startup_flags: Default::default(),
+            special_nullary_startup_flags: Default::default(),
+            valid_unary_startup_flags: Default::default(),
+            option_sources_key_override: Default::default(),
+            // #if defined(__APPLE__)
+            //       macos_qos_class(QOS_CLASS_DEFAULT),
+            // #endif
+        };
+
+        if bazel_util::is_running_within_test() {
+            let test_temp_dir = PathBuf::from(std::env::var("TEST_TMPDIR").unwrap());
+            ret.output_root = fs::canonicalize(&test_temp_dir).unwrap();
+            ret.max_idle = Duration::seconds(15);
+
+            if let Some(log) = logger {
+                info!(
+                    log,
+                    "$TEST_TMPDIR defined: output root is '{}' and max_idle default is '{:?}'.",
+                    ret.output_root.to_str().unwrap(),
+                    ret.max_idle
+                );
+            }
+        } else if let Some(log) = logger {
+            info!(
+                log,
+                "output root is '{}' and max_idle default is '{:?}'.",
+                ret.output_root.to_str().unwrap(),
+                ret.max_idle
+            );
+        };
+
+        // #if defined(_WIN32) || defined(__CYGWIN__)
+        //   string windows_unix_root = DetectBashAndExportBazelSh();
+        //   if (!windows_unix_root.empty()) {
+        //     host_jvm_args.push_back(string("-Dbazel.windows_unix_root=") + windows_unix_root);
+        //   }
+        // #endif  // defined(_WIN32) || defined(__CYGWIN__)
+
+        ret.output_user_root = ret.output_root.join(format!(
+            "_{}_{}",
+            ret.product_name.to_lowercase(),
+            whoami::username()
+        ));
+        //   output_user_root = blaze_util::JoinPath(output_root, "_" + product_name_lower + "_" + GetUserName());
+
+        // IMPORTANT: Before modifying the statements below please contact a Bazel
+        // core team member that knows the internal procedure for adding/deprecating
+        // startup flags.
+        ret.register_nullary_startup_flag("batch", Some(ret.batch));
+        ret.register_nullary_startup_flag("batch_cpu_scheduling", Some(ret.batch_cpu_scheduling));
+        ret.register_nullary_startup_flag("block_for_lock", Some(ret.block_for_lock));
+        ret.register_nullary_startup_flag("client_debug", Some(ret.client_debug));
+        ret.register_nullary_startup_flag("preemptible", Some(ret.preemptible));
+        ret.register_nullary_startup_flag(
+            "expand_configs_in_place",
+            Some(ret.expand_configs_in_place),
+        );
+        ret.register_nullary_startup_flag(
+            "fatal_event_bus_exceptions",
+            Some(ret.fatal_event_bus_exceptions),
+        );
+        ret.register_nullary_startup_flag("host_jvm_debug", Some(ret.host_jvm_debug));
+        ret.register_nullary_startup_flag(
+            "autodetect_server_javabase",
+            Some(ret.autodetect_server_javabase),
+        );
+        ret.register_nullary_startup_flag("idle_server_tasks", Some(ret.idle_server_tasks));
+        ret.register_nullary_startup_flag(
+            "incompatible_enable_execution_transition",
+            Some(ret.incompatible_enable_execution_transition),
+        );
+        ret.register_nullary_startup_flag(
+            "shutdown_on_low_sys_mem",
+            Some(ret.shutdown_on_low_sys_mem),
+        );
+        ret.register_nullary_startup_flag_no_rc(
+            "ignore_all_rc_files",
+            Some(ret.ignore_all_rc_files),
+        );
+        ret.register_nullary_startup_flag("unlimit_coredumps", Some(ret.unlimit_coredumps));
+        ret.register_nullary_startup_flag("watchfs", Some(ret.watchfs));
+        ret.register_nullary_startup_flag("write_command_log", Some(ret.write_command_log));
+        ret.register_nullary_startup_flag(
+            "windows_enable_symlinks",
+            Some(ret.windows_enable_symlinks),
+        );
+        ret.register_unary_startup_flag("command_port");
+        ret.register_unary_startup_flag("connect_timeout_secs");
+        ret.register_unary_startup_flag("local_startup_timeout_secs");
+        ret.register_unary_startup_flag("digest_function");
+        ret.register_unary_startup_flag("unix_digest_hash_attribute_name");
+        ret.register_unary_startup_flag("server_javabase");
+        ret.register_unary_startup_flag("host_jvm_args");
+        ret.register_unary_startup_flag("host_jvm_profile");
+        ret.register_unary_startup_flag("invocation_policy");
+        ret.register_unary_startup_flag("io_nice_level");
+        ret.register_unary_startup_flag("install_base");
+        ret.register_unary_startup_flag("macos_qos_class");
+        ret.register_unary_startup_flag("max_idle_secs");
+        ret.register_unary_startup_flag("output_base");
+        ret.register_unary_startup_flag("output_user_root");
+        ret.register_unary_startup_flag("server_jvm_out");
+        ret.register_unary_startup_flag("failure_detail_out");
+        ret.register_nullary_startup_flag_no_rc("home_rc", Some(ret.use_home_rc));
+        ret.register_nullary_startup_flag_no_rc("master_bazelrc", Some(ret.use_master_bazelrc));
+        ret.override_option_sources_key("master_bazelrc", "blazerc");
+        ret.register_nullary_startup_flag_no_rc("system_rc", Some(ret.use_system_rc));
+        ret.register_nullary_startup_flag_no_rc("workspace_rc", Some(ret.use_workspace_rc));
+        ret.register_unary_startup_flag("bazelrc");
+
+        ret
+    }
+
     fn process_args(rcstartup_flags: Vec<RcStartupFlag>) -> Result<(), (String, ExitCode)> {
         let i = 0;
         while i < rcstartup_flags.len() {
@@ -443,172 +610,6 @@ impl StartupOptions {
     fn override_option_sources_key(&mut self, name: &str, new_name: &str) {
         self.option_sources_key_override
             .insert(name.to_owned(), new_name.to_owned());
-    }
-
-    pub fn new(product_name: String, logger: Option<slog::Logger>) -> Self {
-        let mut ret = Self {
-            user_bazelrc: "".to_string(),
-            use_system_rc: true,
-            use_workspace_rc: true,
-            use_home_rc: true,
-            use_master_bazelrc: true,
-            product_name,
-            server_jvm_out: None,
-            failure_detail_out: None,
-            output_base: Default::default(),
-            install_base: "".to_string(),
-            output_root: workspace_layout::get_output_root(),
-            output_user_root: "".to_string(),
-            ignore_all_rc_files: false,
-            block_for_lock: true,
-            host_jvm_debug: false,
-            autodetect_server_javabase: true,
-            host_jvm_profile: "".to_string(),
-            host_jvm_args: vec![],
-            batch: false,
-            batch_cpu_scheduling: false,
-            io_nice_level: -1,
-            max_idle: Duration::hours(3),
-            shutdown_on_low_sys_mem: false,
-            oom_more_eagerly: false,
-            oom_more_eagerly_threshold: 100,
-            write_command_log: true,
-            watchfs: false,
-            fatal_event_bus_exceptions: false,
-            option_sources: Default::default(),
-            command_port: 0,
-            connect_timeout: Duration::seconds(30),
-            local_startup_timeout: Duration::minutes(2),
-            invocation_policy: "".to_string(),
-            have_invocation_policy: false,
-            client_debug: false,
-            preemptible: false,
-            java_logging_formatter: "com.google.devtools.build.lib.util.SingleLineFormatter"
-                .to_string(),
-            expand_configs_in_place: true,
-            digest_function: "".to_string(), // FIXME empty? none?       digest_function(),
-            unix_digest_hash_attribute_name: "".to_string(),
-            idle_server_tasks: true,
-            original_startup_options: Vec::<RcStartupFlag>::new(),
-            unlimit_coredumps: false,
-            incompatible_enable_execution_transition: false,
-            windows_enable_symlinks: false,
-            explicit_server_javabase: Default::default(),
-            default_server_javabase: (Default::default(), Default::default()),
-            all_nullary_startup_flags: Default::default(),
-            no_rc_nullary_startup_flags: Default::default(),
-            special_nullary_startup_flags: Default::default(),
-            valid_unary_startup_flags: Default::default(),
-            option_sources_key_override: Default::default(),
-            // #if defined(__APPLE__)
-            //       macos_qos_class(QOS_CLASS_DEFAULT),
-            // #endif
-        };
-
-        if bazel_util::is_running_within_test() {
-            let test_temp_dir = PathBuf::from(std::env::var("TEST_TMPDIR").unwrap());
-            ret.output_root = fs::canonicalize(&test_temp_dir)
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .to_owned();
-            ret.max_idle = Duration::seconds(15);
-
-            if let Some(log) = logger {
-                info!(
-                    log,
-                    "$TEST_TMPDIR defined: output root is '{}' and max_idle default is '{:?}'.",
-                    ret.output_root,
-                    ret.max_idle
-                );
-            }
-        } else {
-            if let Some(log) = logger {
-                info!(
-                    log,
-                    "output root is '{}' and max_idle default is '{:?}'.",
-                    ret.output_root,
-                    ret.max_idle
-                );
-            }
-        };
-
-        // #if defined(_WIN32) || defined(__CYGWIN__)
-        //   string windows_unix_root = DetectBashAndExportBazelSh();
-        //   if (!windows_unix_root.empty()) {
-        //     host_jvm_args.push_back(string("-Dbazel.windows_unix_root=") + windows_unix_root);
-        //   }
-        // #endif  // defined(_WIN32) || defined(__CYGWIN__)
-
-        //   const string product_name_lower = get_lowercase_product_name();
-        //   output_user_root = blaze_util::JoinPath(output_root, "_" + product_name_lower + "_" + GetUserName());
-
-        // IMPORTANT: Before modifying the statements below please contact a Bazel
-        // core team member that knows the internal procedure for adding/deprecating
-        // startup flags.
-        ret.register_nullary_startup_flag("batch", Some(ret.batch));
-        ret.register_nullary_startup_flag("batch_cpu_scheduling", Some(ret.batch_cpu_scheduling));
-        ret.register_nullary_startup_flag("block_for_lock", Some(ret.block_for_lock));
-        ret.register_nullary_startup_flag("client_debug", Some(ret.client_debug));
-        ret.register_nullary_startup_flag("preemptible", Some(ret.preemptible));
-        ret.register_nullary_startup_flag(
-            "expand_configs_in_place",
-            Some(ret.expand_configs_in_place),
-        );
-        ret.register_nullary_startup_flag(
-            "fatal_event_bus_exceptions",
-            Some(ret.fatal_event_bus_exceptions),
-        );
-        ret.register_nullary_startup_flag("host_jvm_debug", Some(ret.host_jvm_debug));
-        ret.register_nullary_startup_flag(
-            "autodetect_server_javabase",
-            Some(ret.autodetect_server_javabase),
-        );
-        ret.register_nullary_startup_flag("idle_server_tasks", Some(ret.idle_server_tasks));
-        ret.register_nullary_startup_flag(
-            "incompatible_enable_execution_transition",
-            Some(ret.incompatible_enable_execution_transition),
-        );
-        ret.register_nullary_startup_flag(
-            "shutdown_on_low_sys_mem",
-            Some(ret.shutdown_on_low_sys_mem),
-        );
-        ret.register_nullary_startup_flag_no_rc(
-            "ignore_all_rc_files",
-            Some(ret.ignore_all_rc_files),
-        );
-        ret.register_nullary_startup_flag("unlimit_coredumps", Some(ret.unlimit_coredumps));
-        ret.register_nullary_startup_flag("watchfs", Some(ret.watchfs));
-        ret.register_nullary_startup_flag("write_command_log", Some(ret.write_command_log));
-        ret.register_nullary_startup_flag(
-            "windows_enable_symlinks",
-            Some(ret.windows_enable_symlinks),
-        );
-        ret.register_unary_startup_flag("command_port");
-        ret.register_unary_startup_flag("connect_timeout_secs");
-        ret.register_unary_startup_flag("local_startup_timeout_secs");
-        ret.register_unary_startup_flag("digest_function");
-        ret.register_unary_startup_flag("unix_digest_hash_attribute_name");
-        ret.register_unary_startup_flag("server_javabase");
-        ret.register_unary_startup_flag("host_jvm_args");
-        ret.register_unary_startup_flag("host_jvm_profile");
-        ret.register_unary_startup_flag("invocation_policy");
-        ret.register_unary_startup_flag("io_nice_level");
-        ret.register_unary_startup_flag("install_base");
-        ret.register_unary_startup_flag("macos_qos_class");
-        ret.register_unary_startup_flag("max_idle_secs");
-        ret.register_unary_startup_flag("output_base");
-        ret.register_unary_startup_flag("output_user_root");
-        ret.register_unary_startup_flag("server_jvm_out");
-        ret.register_unary_startup_flag("failure_detail_out");
-        ret.register_nullary_startup_flag_no_rc("home_rc", Some(ret.use_home_rc));
-        ret.register_nullary_startup_flag_no_rc("master_bazelrc", Some(ret.use_master_bazelrc));
-        ret.override_option_sources_key("master_bazelrc", "blazerc");
-        ret.register_nullary_startup_flag_no_rc("system_rc", Some(ret.use_system_rc));
-        ret.register_nullary_startup_flag_no_rc("workspace_rc", Some(ret.use_workspace_rc));
-        ret.register_unary_startup_flag("bazelrc");
-
-        ret
     }
 
     pub fn lowercase_product_name(&self) -> String {

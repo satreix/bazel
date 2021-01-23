@@ -27,6 +27,7 @@ rust_library(
         "//cargo:slog_term",
         "//cargo:whoami",
         "//cargo:zip",
+        "//cargo:md5",
         "//src/main/protobuf:command_server_rust_proto",
     ] + GRPC_COMPILE_DEPS,
 )

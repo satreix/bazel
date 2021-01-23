@@ -323,6 +323,16 @@ def raze_fetch_remote_crates():
 
     maybe(
         http_archive,
+        name = "raze__md5__0_7_0",
+        url = "https://crates.io/api/v1/crates/md5/0.7.0/download",
+        type = "tar.gz",
+        sha256 = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771",
+        strip_prefix = "md5-0.7.0",
+        build_file = Label("//cargo/remote:BUILD.md5-0.7.0.bazel"),
+    )
+
+    maybe(
+        http_archive,
         name = "raze__miniz_oxide__0_3_7",
         url = "https://crates.io/api/v1/crates/miniz_oxide/0.3.7/download",
         type = "tar.gz",

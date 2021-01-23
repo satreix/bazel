@@ -31,6 +31,15 @@ alias(
 )
 
 alias(
+    name = "md5",
+    actual = "@raze__md5__0_7_0//:md5",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
     name = "slog",
     actual = "@raze__slog__2_7_0//:slog",
     tags = [

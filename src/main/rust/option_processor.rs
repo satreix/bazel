@@ -35,12 +35,13 @@
 // using std::string;
 // using std::vector;
 
-use crate::bazel_util::is_arg;
+use crate::bazel_util;
 use crate::exit_code::{self, ExitCode};
 use crate::rc_file::RcFile;
 use crate::StartupOptions;
 use slog::o;
 use std::collections::HashSet;
+use std::path::PathBuf;
 
 // constexpr char WorkspaceLayout::WorkspacePrefix[];
 const RC_BASENAME: &str = ".bazelrc";
@@ -53,7 +54,7 @@ const RC_BASENAME: &str = ".bazelrc";
 #[derive(Debug, PartialEq)]
 pub struct CommandLine {
     path_to_binary: String,
-    startup_args: Vec<String>,
+    pub startup_args: Vec<String>,
     command: String,
     command_args: Vec<String>,
 }
@@ -172,7 +173,7 @@ impl OptionProcessor {
     //       parse_options_called_(false),
     //       system_bazelrc_path_(system_bazelrc_path) {}
 
-    // blaze_exit_code::ExitCode ParseStartupOptions(const std::vector<RcFile*>& rc_files, std::string* error);
+    // blaze_exit_code::ExitCode parse_startup_options(const std::vector<RcFile*>& rc_files, std::string* error);
 
     /// Splits the arguments of a command line invocation.
     ///
@@ -203,7 +204,7 @@ impl OptionProcessor {
         // Process the startup options.
         let mut startup_args = Vec::<String>::new();
         let mut i = 1;
-        while i < args.len() && is_arg(&args[i]) {
+        while i < args.len() && bazel_util::is_arg(&args[i]) {
             let current_arg = args[i].clone();
 
             // If the current argument is a valid nullary startup option such as
@@ -393,9 +394,9 @@ impl OptionProcessor {
     // blaze_exit_code::ExitCode OptionProcessor::parse_options(@@ARGS@@, string* error) {
     pub fn parse_options(
         &mut self,
-        args: Vec<String>, // const vector<string>& args
-        workspace: &str,   // const string& workspace
-        cwd: &str,         // const string& cwd
+        args: Vec<String>,   // const vector<string>& args
+        workspace: &PathBuf, // const string& workspace
+        cwd: &PathBuf,       // const string& cwd
     ) -> Result<(), exit_code::Error> {
         assert!(!self.parse_options_called);
         self.parse_options_called = true;
@@ -405,18 +406,19 @@ impl OptionProcessor {
             Err(e) => return Err(exit_code::Error::new(exit_code::ExitCode::BadArgv, e)),
         };
 
-        //   // Read the rc files, unless --ignore_all_rc_files was provided on the command
-        //   // line. This depends on the startup options in argv since these may contain
-        //   // other rc-modifying options. For all other options, the precedence of
-        //   // options will be rc first, then command line options, though, despite this
-        //   // exception.
-        //   std::vector<std::unique_ptr<RcFile>> rc_files;
-        //   if (!search_nullary_option(cmd_line_->startup_args, "ignore_all_rc_files", false)) {
-        //     const blaze_exit_code::ExitCode rc_parsing_exit_code = get_rc_files(workspace_layout_, workspace, cwd, cmd_line_.get(), &rc_files, error);
-        //     if (rc_parsing_exit_code != blaze_exit_code::SUCCESS) {
-        //       return rc_parsing_exit_code;
-        //     }
-        //   }
+        // Read the rc files, unless --ignore_all_rc_files was provided on the command
+        // line. This depends on the startup options in argv since these may contain
+        // other rc-modifying options. For all other options, the precedence of
+        // options will be rc first, then command line options, though, despite this
+        // exception.
+        // let rc_files = Vec::<RcFile>::new();
+        // if !search_nullary_option(&self.cmd_line.unwrap().startup_args, "ignore_all_rc_files", false) {
+        //     self.get_rc_files(workspace, cwd, self.cmd_line.unwrap());
+        //     // const blaze_exit_code::ExitCode rc_parsing_exit_code = get_rc_files(workspace_layout_, workspace, cwd, cmd_line_.get(), &rc_files, error);
+        //     // if (rc_parsing_exit_code != blaze_exit_code::SUCCESS) {
+        //     //   return rc_parsing_exit_code;
+        //     // }
+        // }
 
         //   // The helpers expect regular pointers, not unique_ptrs.
         //   std::vector<RcFile*> rc_file_ptrs;
@@ -424,7 +426,7 @@ impl OptionProcessor {
         //   for (auto& rc_file : rc_files) { rc_file_ptrs.push_back(rc_file.get()); }
 
         //   // Parse the startup options in the correct priority order.
-        //   const blaze_exit_code::ExitCode parse_startup_options_exit_code = ParseStartupOptions(rc_file_ptrs, error);
+        //   const blaze_exit_code::ExitCode parse_startup_options_exit_code = parse_startup_options(rc_file_ptrs, error);
         //   if (parse_startup_options_exit_code != blaze_exit_code::SUCCESS) {
         //     return parse_startup_options_exit_code;
         //   }
@@ -470,35 +472,38 @@ impl OptionProcessor {
         //   PrintStartupOptions(most_recent_blazerc, accumulated_options);
     }
 
-    // blaze_exit_code::ExitCode OptionProcessor::ParseStartupOptions(
-    //     const std::vector<RcFile*> &rc_files, std::string *error) {
-    //   // Rc files can import other files at any point, and these imported rcs are
-    //   // expanded in place. Here, we isolate just the startup options but keep the
-    //   // file they came from attached for the option_sources tracking and for
-    //   // sending to the server.
-    //   std::vector<RcStartupFlag> rcstartup_flags;
-    //
-    //   for (const auto* blazerc : rc_files) {
-    //     const auto iter = blazerc->options().find("startup");
-    //     if (iter == blazerc->options().end()) continue;
-    //
-    //     for (const RcOption& option : iter->second) {
-    //       const std::string& source_path =
-    //           blazerc->canonical_source_paths()[option.source_index];
-    //       rcstartup_flags.push_back({source_path, option.option});
-    //     }
-    //   }
-    //
-    //   for (const std::string& arg : cmd_line_->startup_args) {
-    //     if (!is_arg(arg)) {
-    //       break;
-    //     }
-    //     rcstartup_flags.push_back(RcStartupFlag("", arg));
-    //   }
-    //
-    //   return startup_options_->ProcessArgs(rcstartup_flags, error);
-    // }
-    //
+    fn parse_startup_options() -> Result<(), exit_code::Error> {
+        // blaze_exit_code::ExitCode OptionProcessor::parse_startup_options(
+        //     const std::vector<RcFile*> &rc_files, std::string *error) {
+
+        //   // Rc files can import other files at any point, and these imported rcs are
+        //   // expanded in place. Here, we isolate just the startup options but keep the
+        //   // file they came from attached for the option_sources tracking and for
+        //   // sending to the server.
+        //   std::vector<RcStartupFlag> rcstartup_flags;
+        //
+        //   for (const auto* blazerc : rc_files) {
+        //     const auto iter = blazerc->options().find("startup");
+        //     if (iter == blazerc->options().end()) continue;
+        //
+        //     for (const RcOption& option : iter->second) {
+        //       const std::string& source_path =
+        //           blazerc->canonical_source_paths()[option.source_index];
+        //       rcstartup_flags.push_back({source_path, option.option});
+        //     }
+        //   }
+        //
+        //   for (const std::string& arg : cmd_line_->startup_args) {
+        //     if (!is_arg(arg)) {
+        //       break;
+        //     }
+        //     rcstartup_flags.push_back(RcStartupFlag("", arg));
+        //   }
+        //
+        //   return startup_options_->ProcessArgs(rcstartup_flags, error);
+        unimplemented!()
+    }
+
     // static bool IsValidEnvName(const char* p) {
     // #if defined(_WIN32) || defined(__CYGWIN__)
     //   for (; *p && *p != '='; ++p) {
