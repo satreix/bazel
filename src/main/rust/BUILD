@@ -23,11 +23,12 @@ rust_library(
     deps = [
         "//cargo:chrono",
         "//cargo:dirs",
+        "//cargo:is_executable",
+        "//cargo:md5",
         "//cargo:slog",
         "//cargo:slog_term",
         "//cargo:whoami",
         "//cargo:zip",
-        "//cargo:md5",
         "//src/main/protobuf:command_server_rust_proto",
     ] + GRPC_COMPILE_DEPS,
 )

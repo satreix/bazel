@@ -53,7 +53,7 @@ pub struct RcFile {
 
     /// Workspace definition.
     // FIXME const WorkspaceLayout* workspace_layout;
-    workspace: String,
+    workspace: PathBuf,
 }
 
 impl RcFile {
@@ -62,14 +62,14 @@ impl RcFile {
         logger: slog::Logger,
         filename: &str,
         // FIXME const WorkspaceLayout* workspace_layout
-        workspace: &str,
+        workspace: &PathBuf,
     ) -> Result<Self, ParseError> {
         let mut rc = Self {
             logger,
             filename: filename.to_string(),
             canonical_rcfile_paths: Vec::new(),
             options: Default::default(),
-            workspace: workspace.to_string(),
+            workspace: workspace.to_owned(),
         };
         let mut import_stack = VecDeque::new();
         rc.parse_file(filename, &mut import_stack)?;
@@ -187,6 +187,7 @@ impl RcFile {
 mod test {
     use super::*;
     use slog::{o, Drain};
+    use std::path::Path;
 
     macro_rules! map(
         { $($key:expr => $value:expr),+ } => {
@@ -214,7 +215,7 @@ mod test {
         let got = RcFile::new(
             logger(),
             "src/main/rust/testdata/rc_file/line_split.rc",
-            "src/main/rust/testdata/rc_file",
+            &Path::new("src/main/rust/testdata/rc_file").to_path_buf(),
         );
 
         let want = map! {
@@ -232,7 +233,7 @@ mod test {
         let got = RcFile::new(
             logger(),
             "src/main/rust/testdata/rc_file/user.rc",
-            "src/main/rust/testdata/rc_file",
+            &Path::new("src/main/rust/testdata/rc_file").to_path_buf(),
         );
 
         let want = map! {
@@ -256,7 +257,7 @@ mod test {
         let got = RcFile::new(
             logger(),
             "src/main/rust/testdata/rc_file/import_workspace_prefix.rc",
-            "src/main/rust/testdata/rc_file",
+            &Path::new("src/main/rust/testdata/rc_file").to_path_buf(),
         );
         assert!(got.is_ok());
     }
@@ -266,7 +267,7 @@ mod test {
         let got = RcFile::new(
             logger(),
             "src/main/rust/testdata/rc_file/tensorflow.rc",
-            "src/main/rust/testdata/rc_file",
+            &Path::new("src/main/rust/testdata/rc_file").to_path_buf(),
         );
         assert!(got.is_ok());
     }
@@ -276,7 +277,7 @@ mod test {
         let got = RcFile::new(
             logger(),
             "src/main/rust/testdata/rc_file/import_loop_self.rc",
-            "src/main/rust/testdata/rc_file",
+            &Path::new("src/main/rust/testdata/rc_file").to_path_buf(),
         );
         let want = ParseError::ImportLoop("Import loop detected:\nsrc/main/rust/testdata/rc_file/import_loop_self.rc src/main/rust/testdata/rc_file/import_loop_self.rc".to_string());
         assert!(got.is_err());
@@ -288,7 +289,7 @@ mod test {
         let got = RcFile::new(
             logger(),
             "src/main/rust/testdata/rc_file/import_loop1.rc",
-            "src/main/rust/testdata/rc_file",
+            &Path::new("src/main/rust/testdata/rc_file").to_path_buf(),
         );
         let want = ParseError::ImportLoop("Import loop detected:\nsrc/main/rust/testdata/rc_file/import_loop2.rc src/main/rust/testdata/rc_file/import_loop3.rc src/main/rust/testdata/rc_file/import_loop1.rc src/main/rust/testdata/rc_file/import_loop2.rc".to_string());
         assert!(got.is_err());

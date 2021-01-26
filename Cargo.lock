@@ -47,6 +47,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirs 3.0.1",
+ "is_executable",
  "md5",
  "slog",
  "slog-async",
@@ -237,6 +238,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5aca5565f760fb5b220e499d72710ed156fdb74e631659e99377d9ebfbd13ae8"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "is_executable"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1426a051d4e6edd01995e55e2cb58eef936d773093b7e6ed1a2109fca474906d"
+dependencies = [
+ "winapi",
 ]
 
 [[package]]

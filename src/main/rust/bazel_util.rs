@@ -7,6 +7,11 @@ const POST_KILL_GRACE_PERIOD: Duration = Duration::from_secs(10);
 const POST_SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(60);
 const SERVER_PID_FILE: &str = "server.pid.txt";
 
+#[cfg(target_family = "unix")]
+pub const JAVA_BINARY_UNDER_JAVABASE: &str = "bin/java";
+#[cfg(target_family = "windows")]
+pub const JAVA_BINARY_UNDER_JAVABASE: &str = "bin/java.exe";
+
 // extern const char kServerPidFile[];
 
 // // The number of seconds the client will wait for the server process to
@@ -353,5 +358,25 @@ pub fn hashed_base_dir(root: PathBuf, hashable: &str) -> String {
     //   }
     //   coded_name[filename_length] = '\0';
     //   return blaze_util::JoinPath(root, string(coded_name));
+    unimplemented!()
+}
+
+#[cfg(target_family = "unix")]
+pub fn convert_path(path: &PathBuf) -> PathBuf {
+    path.to_path_buf()
+}
+
+#[cfg(target_family = "windows")]
+pub fn convert_path(path: PathBuf) -> PathBuf {
+    // The path may not be Windows-style and may not be normalized, so convert it.
+    //   std::string converted_path;
+    //   std::string error;
+    //   if (!AsWindowsPath(path, &converted_path, &error)) {
+    //     BAZEL_DIE(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR)
+    //         << "convert_path(" << path << "): AsWindowsPath failed: " << error;
+    //   }
+    //   std::transform(converted_path.begin(), converted_path.end(),
+    //                  converted_path.begin(), ::tolower);
+    //   return converted_path;
     unimplemented!()
 }

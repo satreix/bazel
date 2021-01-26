@@ -34,9 +34,10 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::bazel_util;
-use crate::exit_code::{Error, ExitCode};
+use crate::exit_code::Error;
 use crate::workspace_layout;
 use chrono::Duration;
+use is_executable::IsExecutable;
 use slog::info;
 
 type SpecialNullaryFlagHandler = fn(bool);
@@ -53,7 +54,7 @@ pub struct RcStartupFlag {
 }
 
 impl RcStartupFlag {
-    fn new(source: String, value: String) -> Self {
+    pub fn new(source: String, value: String) -> Self {
         Self { source, value }
     }
 }
@@ -117,8 +118,6 @@ pub struct StartupOptions {
     //   // Returns the exit code after this operation. "error" will be set to a
     //   // descriptive string for any value other than blaze_exit_code::SUCCESS.
     //   blaze_exit_code::ExitCode AddJVMArguments(const blaze_util::Path &server_javabase, std::vector<std::string> *result, const std::vector<std::string> &user_options, std::string *error) const;
-    //
-    //   std::string get_lowercase_product_name() const;
     /// The capitalized name of this binary.
     product_name: String,
 
@@ -129,7 +128,7 @@ pub struct StartupOptions {
     //   blaze_util::Path server_jvm_out;
     /// If supplied, alternate location to write a serialized failure_detail proto.
     /// Otherwise a default path in the output base is used.
-    failure_detail_out: Option<String>,
+    pub failure_detail_out: Option<PathBuf>,
 
     //   blaze_util::Path failure_detail_out;
     /// Blaze's output base.  Everything is relative to this.  See
@@ -138,7 +137,7 @@ pub struct StartupOptions {
 
     //   blaze_util::Path output_base;
     /// Installation base for a specific release installation.
-    install_base: String,
+    pub install_base: Option<PathBuf>,
 
     /// The toplevel directory containing Blaze's output.  When Blaze is
     /// run by a test, we use TEST_TMPDIR, simplifying the correct
@@ -157,7 +156,7 @@ pub struct StartupOptions {
     /// be acquired immediately.
     pub block_for_lock: bool,
 
-    host_jvm_debug: bool,
+    pub host_jvm_debug: bool,
     autodetect_server_javabase: bool,
     host_jvm_profile: String,
     host_jvm_args: Vec<String>,
@@ -177,7 +176,7 @@ pub struct StartupOptions {
     shutdown_on_low_sys_mem: bool,
     oom_more_eagerly: bool,
     oom_more_eagerly_threshold: i32,
-    write_command_log: bool,
+    pub write_command_log: bool,
 
     /// If true, Blaze will listen to OS-level file change notifications.
     watchfs: bool,
@@ -190,13 +189,6 @@ pub struct StartupOptions {
     /// from a blazerc file, if a key is not present, it is the default.
     option_sources: HashMap<String, String>,
 
-    //   // Returns the embedded JDK, or an empty string.
-    //   blaze_util::Path GetEmbeddedJavabase() const;
-
-    //   // Returns the server javabase and its source of truth. This should be called
-    //   // after parsing the --server_javabase option.
-    //   std::pair<blaze_util::Path, JavabaseType> GetServerJavabaseAndType() const;
-
     //   // Returns the server javabase. This should be called after parsing the
     //   // --server_javabase option.
     //   blaze_util::Path GetServerJavabase() const;
@@ -204,8 +196,8 @@ pub struct StartupOptions {
     //   // Returns the explicit value of the --server_javabase startup option or the
     //   // empty string if it was not specified on the command line.
     //   blaze_util::Path GetExplicitServerJavabase() const;
-    /// Port to start up the gRPC command server on. If 0, let the kernel choose.
-    command_port: i32,
+    /// Port to start up the gRPC command server on. If None, let the kernel choose.
+    pub command_port: Option<i32>,
 
     /// Connection timeout for each gRPC connection attempt.
     pub connect_timeout: Duration,
@@ -214,7 +206,7 @@ pub struct StartupOptions {
     local_startup_timeout: Duration,
 
     /// Invocation policy proto, or an empty string.
-    invocation_policy: String,
+    pub invocation_policy: String,
 
     /// Invocation policy can only be specified once.
     have_invocation_policy: bool,
@@ -240,7 +232,7 @@ pub struct StartupOptions {
 
     /// The startup options as received from the user and rc files, tagged with
     /// their origin. This is populated by ProcessArgs.
-    original_startup_options: Vec<RcStartupFlag>,
+    pub original_startup_options: Vec<RcStartupFlag>,
 
     // #if defined(__APPLE__)
     //   // The QoS class to apply to the Bazel server process.
@@ -299,7 +291,7 @@ pub struct StartupOptions {
     //
     //   virtual std::string GetRcFileBaseName() const = 0;
     /// The server javabase as provided on the commandline.
-    explicit_server_javabase: PathBuf,
+    explicit_server_javabase: Option<PathBuf>,
 
     /// The default server javabase to be used and its source of truth (computed
     /// lazily). Not guarded by a mutex - StartupOptions is not thread-safe.
@@ -353,7 +345,7 @@ impl StartupOptions {
             server_jvm_out: None,
             failure_detail_out: None,
             output_base: Default::default(),
-            install_base: "".to_string(),
+            install_base: Default::default(),
             output_root: workspace_layout::get_output_root(),
             output_user_root: Default::default(),
             ignore_all_rc_files: false,
@@ -373,7 +365,7 @@ impl StartupOptions {
             watchfs: false,
             fatal_event_bus_exceptions: false,
             option_sources: Default::default(),
-            command_port: 0,
+            command_port: None,
             connect_timeout: Duration::seconds(30),
             local_startup_timeout: Duration::minutes(2),
             invocation_policy: "".to_string(),
@@ -506,7 +498,8 @@ impl StartupOptions {
         ret
     }
 
-    fn process_args(rcstartup_flags: Vec<RcStartupFlag>) -> Result<(), (String, ExitCode)> {
+    /// Process an ordered list of RcStartupFlags using process_arg.
+    pub fn process_args(&mut self, rcstartup_flags: Vec<RcStartupFlag>) -> Result<(), Error> {
         let i = 0;
         while i < rcstartup_flags.len() {
             let is_space_separated = false;
@@ -534,9 +527,6 @@ impl StartupOptions {
         unimplemented!();
     }
 
-    //     /// Process an ordered list of RcStartupFlags using process_arg.
-    //     fn process_args(rcstartup_flags: Vec<RcStartupFlag>) -> Result<(), (String, ExitCode)>;
-    //
     //     /// Adds any other options needed to result.
     //     ///
     //     /// TODO(jmmv): Now that we support site-specific options via subclasses of
@@ -549,14 +539,6 @@ impl StartupOptions {
     //         // const = 0;
     //         false
     //     }
-    //
-    //     /// Returns the path to the JVM. This should be called after parsing the
-    //     /// startup options.
-    //     fn get_jvm() -> PathBuf;
-    //
-    //     /// Returns the executable used to start the Blaze server, typically the
-    //     /// given JVM.
-    //     fn get_exe(jvm: PathBuf, jar_path: &str) -> PathBuf;
     //
     //     /// Adds JVM prefix flags to be set.
     //     ///
@@ -885,59 +867,75 @@ impl StartupOptions {
     //   return blaze_util::Path(blaze::GetSystemJavabase());
     // }
 
-    // blaze_util::Path StartupOptions::GetEmbeddedJavabase() const {
-    //   blaze_util::Path bundled_jre_path = blaze_util::Path(
-    //       blaze_util::JoinPath(install_base, "embedded_tools/jdk"));
-    //   if (blaze_util::CanExecuteFile(
-    //           bundled_jre_path.GetRelative(GetJavaBinaryUnderJavabase()))) {
-    //     return bundled_jre_path;
-    //   }
-    //   return blaze_util::Path();
-    // }
+    /// Returns the embedded JDK, or an empty string.
+    fn get_embedded_javabase(&self) -> Option<PathBuf> {
+        None
 
-    // std::pair<blaze_util::Path, StartupOptions::JavabaseType> StartupOptions::GetServerJavabaseAndType() const {
-    //   // 1) Allow overriding the server_javabase via --server_javabase.
-    //   if (!explicit_server_javabase_.IsEmpty()) {
-    //     return std::pair<blaze_util::Path, JavabaseType>(explicit_server_javabase_, JavabaseType::EXPLICIT);
-    //   }
-    //   if (default_server_javabase_.first.IsEmpty()) {
-    //     blaze_util::Path bundled_jre_path = GetEmbeddedJavabase();
-    //     if (!bundled_jre_path.IsEmpty()) {
-    //       // 2) Use a bundled JVM if we have one.
-    //       default_server_javabase_ = std::pair<blaze_util::Path, JavabaseType>(bundled_jre_path, JavabaseType::EMBEDDED);
-    //     } else if (!autodetect_server_javabase) {
-    //       BAZEL_DIE(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR)
-    //           << "Could not find embedded or explicit server javabase, and --noautodetect_server_javabase is set.";
-    //     } else {
-    //       // 3) Otherwise fall back to using the default system JVM.
-    //       blaze_util::Path system_javabase = GetSystemJavabase();
-    //       if (system_javabase.IsEmpty()) {
-    //         BAZEL_DIE(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR)
-    //             << "Could not find system javabase. Ensure JAVA_HOME is set, or javac is on your PATH.";
-    //       }
-    //       default_server_javabase_ = std::pair<blaze_util::Path, JavabaseType>(system_javabase, JavabaseType::SYSTEM);
-    //     }
-    //   }
-    //   return default_server_javabase_;
-    // }
+        // let bundled_jre_path = self.install_base.as_ref().unwrap().join("embedded_tools/jdk");
+        // if bundled_jre_path
+        //     .join(bazel_util::JAVA_BINARY_UNDER_JAVABASE)
+        //     .is_executable()
+        // {
+        //     Some(bundled_jre_path)
+        // } else {
+        //     None
+        // }
+    }
+
+    /// Returns the server javabase and its source of truth. This should be called
+    /// after parsing the --server_javabase option.
+    fn get_server_javabase_and_type(&self) -> (PathBuf, JavabaseType) {
+        // 1) Allow overriding the server_javabase via --server_javabase.
+        if self.explicit_server_javabase.is_some() {
+            return (
+                self.explicit_server_javabase.clone().unwrap(),
+                JavabaseType::Explicit,
+            );
+        }
+
+        if self.default_server_javabase.0.as_os_str().is_empty() {
+            let bundled_jre_path = self.get_embedded_javabase();
+            //     if (!bundled_jre_path.IsEmpty()) {
+            //       // 2) Use a bundled JVM if we have one.
+            //       default_server_javabase_ = std::pair<blaze_util::Path, JavabaseType>(bundled_jre_path, JavabaseType::EMBEDDED);
+            //     } else if (!autodetect_server_javabase) {
+            //       BAZEL_DIE(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR)
+            //           << "Could not find embedded or explicit server javabase, and --noautodetect_server_javabase is set.";
+            //     } else {
+            //       // 3) Otherwise fall back to using the default system JVM.
+            //       blaze_util::Path system_javabase = GetSystemJavabase();
+            //       if (system_javabase.IsEmpty()) {
+            //         BAZEL_DIE(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR)
+            //             << "Could not find system javabase. Ensure JAVA_HOME is set, or javac is on your PATH.";
+            //       }
+            //       default_server_javabase_ = std::pair<blaze_util::Path, JavabaseType>(system_javabase, JavabaseType::SYSTEM);
+            //     }
+            //   }
+        }
+
+        return self.default_server_javabase.clone();
+    }
 
     // blaze_util::Path StartupOptions::GetServerJavabase() const {
-    //   return GetServerJavabaseAndType().first;
+    //   return get_server_javabase_and_type().first;
     // }
 
     // blaze_util::Path StartupOptions::GetExplicitServerJavabase() const {
     //   return explicit_server_javabase_;
     // }
 
-    // blaze_util::Path StartupOptions::get_jvm() const {
-    //   auto javabase_and_type = GetServerJavabaseAndType();
-    //   blaze_exit_code::ExitCode sanity_check_code =
-    //       SanityCheckJavabase(javabase_and_type.first, javabase_and_type.second);
-    //   if (sanity_check_code != blaze_exit_code::SUCCESS) {
-    //     exit(sanity_check_code);
-    //   }
-    //   return javabase_and_type.first.GetRelative(GetJavaBinaryUnderJavabase());
-    // }
+    /// Returns the path to the JVM. This should be called after parsing the
+    /// startup options.
+    pub fn get_jvm(&self) -> PathBuf {
+        let javabase_and_type = self.get_server_javabase_and_type();
+        //   blaze_exit_code::ExitCode sanity_check_code = SanityCheckJavabase(javabase_and_type.first, javabase_and_type.second);
+        //   if (sanity_check_code != blaze_exit_code::SUCCESS) {
+        //     exit(sanity_check_code);
+        //   }
+        javabase_and_type
+            .0
+            .join(bazel_util::JAVA_BINARY_UNDER_JAVABASE)
+    }
 
     // // Prints an appropriate error message and returns an appropriate error exit
     // // code for a server javabase which failed sanity checks.
@@ -970,7 +968,7 @@ impl StartupOptions {
     // }
 
     // blaze_exit_code::ExitCode StartupOptions::SanityCheckJavabase(const blaze_util::Path &javabase, StartupOptions::JavabaseType javabase_type) const {
-    //   blaze_util::Path java_program = javabase.GetRelative(GetJavaBinaryUnderJavabase());
+    //   blaze_util::Path java_program = javabase.GetRelative(get_java_binary_under_javabase());
     //   if (!blaze_util::CanExecuteFile(java_program)) {
     //     if (!blaze_util::PathExists(java_program)) {
     //       BAZEL_LOG(ERROR) << "Couldn't find java at '"
@@ -997,9 +995,11 @@ impl StartupOptions {
     //   return BadServerJavabaseError(javabase_type, option_sources);
     // }
 
-    // blaze_util::Path StartupOptions::get_exe(const blaze_util::Path &jvm, const string &jar_path) const {
-    //   return jvm;
-    // }
+    /// Returns the executable used to start the Blaze server, typically the
+    /// given JVM.
+    pub fn get_exe(&self, jvm: &PathBuf, jar_path: &PathBuf) -> PathBuf {
+        jvm.to_owned()
+    }
 
     // void StartupOptions::add_jvmargument_prefix(const blaze_util::Path &javabase, std::vector<string> *result) const {}
 

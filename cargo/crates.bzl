@@ -273,6 +273,16 @@ def raze_fetch_remote_crates():
 
     maybe(
         http_archive,
+        name = "raze__is_executable__1_0_0",
+        url = "https://crates.io/api/v1/crates/is_executable/1.0.0/download",
+        type = "tar.gz",
+        sha256 = "1426a051d4e6edd01995e55e2cb58eef936d773093b7e6ed1a2109fca474906d",
+        strip_prefix = "is_executable-1.0.0",
+        build_file = Label("//cargo/remote:BUILD.is_executable-1.0.0.bazel"),
+    )
+
+    maybe(
+        http_archive,
         name = "raze__js_sys__0_3_46",
         url = "https://crates.io/api/v1/crates/js-sys/0.3.46/download",
         type = "tar.gz",

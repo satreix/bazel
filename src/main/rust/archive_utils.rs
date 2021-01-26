@@ -1,4 +1,6 @@
+use crate::exit_code::ExitCode;
 use std::io::prelude::*;
+use std::path::PathBuf;
 
 // FIXME remove C++ imports
 //
@@ -195,13 +197,14 @@ pub fn extract_build_label(archive_path: &str) -> String {
 }
 
 /// Returns the server jar path from the archive contents.
-pub fn get_server_jar_path() {
+pub fn get_server_jar_path(archive_contents: &[String]) -> Result<PathBuf, ExitCode> {
     // std::string get_server_jar_path(const std::vector<std::string> &archive_contents);
 
-    unimplemented!();
     // if (archive_contents.empty()) {
-    //   BAZEL_DIE(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR)
-    //       << "Couldn't find server jar in archive";
+    //   BAZEL_DIE(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR) << "Couldn't find server jar in archive";
     // }
     // return archive_contents[0];
+
+    // FIXME
+    Ok(Default::default())
 }
